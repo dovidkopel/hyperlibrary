@@ -12,6 +12,7 @@ const (
 )
 
 type Book struct {
+	DocType   string `json:"docType"`
 	Isbn      string `json:"isbn"`
 	Author    string `json:"author"`
 	Title     string `json:"title"`
@@ -21,6 +22,7 @@ type Book struct {
 }
 
 type BookInstance struct {
+	DocType   string `json:"docType"`
 	Id        string
 	BookId    string
 	Purchased time.Time

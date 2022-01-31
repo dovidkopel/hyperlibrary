@@ -4,12 +4,45 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
+	"github.com/hyperledger/fabric-chaincode-go/shim"
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 	"time"
 )
 
 type SmartContract struct {
 	contractapi.Contract
+}
+
+func (s *SmartContract) Init() {
+
+}
+
+func getQueryResultForQueryString(ctx contractapi.TransactionContextInterface, queryString string) ([]*Book, error) {
+	resultsIterator, err := ctx.GetStub().GetQueryResult(queryString)
+	if err != nil {
+		return nil, err
+	}
+	defer resultsIterator.Close()
+
+	return constructQueryResponseFromIterator(resultsIterator)
+}
+
+func constructQueryResponseFromIterator(resultsIterator shim.StateQueryIteratorInterface) ([]*Book, error) {
+	var assets []*Book
+	for resultsIterator.HasNext() {
+		queryResult, err := resultsIterator.Next()
+		if err != nil {
+			return nil, err
+		}
+		var asset Book
+		err = json.Unmarshal(queryResult.Value, &asset)
+		if err != nil {
+			return nil, err
+		}
+		assets = append(assets, &asset)
+	}
+
+	return assets, nil
 }
 
 func (s *SmartContract) CreateBook(ctx contractapi.TransactionContextInterface, book Book) error {
@@ -38,7 +71,7 @@ func (s *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface
 	var i uint8
 	for i = 0; i <= quantity; i++ {
 		instId := uuid.New().String()
-		inst := BookInstance{instId, bookId, time.Now(), cost}
+		inst := BookInstance{"bookInstance", instId, bookId, time.Now(), cost}
 		instBytes, err := json.Marshal(inst)
 
 		if err != nil {
@@ -66,8 +99,9 @@ func (s *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface
 	return instances, nil
 }
 
-func (s *SmartContract) QueryBook(ctx contractapi.TransactionContextInterface, key string, value string) []Book {
-	return []Book{}
+func (s *SmartContract) QueryBook(ctx contractapi.TransactionContextInterface, key string, value string) ([]*Book, error) {
+	queryString := fmt.Sprintf(`{"selector":{"docType":"book","%s":"%s"}}`, key, value)
+	return getQueryResultForQueryString(ctx, queryString)
 }
 
 func (s *SmartContract) BorrowBook(ctx contractapi.TransactionContextInterface, inst BookInstance, person Person) {

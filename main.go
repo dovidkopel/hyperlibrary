@@ -1,9 +1,9 @@
 package main
 
 import (
+	"github.com/dovidkopel/hyperlibrary/chaincode"
 	"log"
 
-	"github.com/dovidkopel/hyperlibrary/chaincode"
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 )
 
