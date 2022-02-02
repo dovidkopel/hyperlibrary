@@ -1,4 +1,4 @@
-module github.com/dovidkopel/hyperlibrary
+module github.com/dovidkopel/hyperlibrary/backend
 
 go 1.17
 

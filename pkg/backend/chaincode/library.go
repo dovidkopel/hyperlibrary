@@ -5,34 +5,34 @@ import (
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
-	"github.com/hyperledger/fabric-chaincode-go/shim"
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
+	"log"
 	"os"
 	"time"
 )
-
-// CORE_PEER_ADDRESS=127.0.0.1:7051 peer chaincode invoke -o 127.0.0.1:7050 -C ch1 -n mycc -c '{"Args":["init"]}' --isInit
-
-// CORE_CHAINCODE_LOGLEVEL=debug CORE_PEER_TLS_ENABLED=true CORE_CHAINCODE_ID_NAME=hyperlibrary:1.0 ./hyperlibrary -peer.address 127.0.0.1:7052
-
-//  peer chaincode invoke -o localhost:7050 --ordererTLSHostnameOverride orderer.example.com --tls --cafile /home/dkopel/go/src/github.com/dovidkopel/fabric-samples/test-network/organizations/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlscacerts/tlsca.example.com-cert.pem -C mychannel -n fabcar --peerAddresses localhost:7051 --tlsRootCertFiles /home/dkopel/go/src/github.com/dovidkopel/fabric-samples/test-network/organizations/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt --peerAddresses localhost:9051 --tlsRootCertFiles /home/dkopel/go/src/github.com/dovidkopel/fabric-samples/test-network/organizations/peerOrganizations/org2.example.com/peers/peer0.org2.example.com/tls/ca.crt --isInit -c '{"function":"initLedger","Args":[]}'
 
 type SmartContract struct {
 	contractapi.Contract
 }
 
+func NewSmartContract(contract contractapi.Contract) *SmartContract {
+	s := &SmartContract{Contract: contract}
+	return s
+}
+
 func (t *SmartContract) Init(ctx contractapi.TransactionContextInterface) error {
-	fmt.Println("Init invoked")
+	log.Println("Init invoked")
 
 	t.CreateBook(ctx, Book{"book", "abcd1234", "Charles Dickens", "A Tale of Two Cities", FICTION, 0, 0})
 	t.CreateBook(ctx, Book{"book", "abcd45454", "William Shakespeare", "Romeo and Juliet", FICTION, 0, 0})
+	t.CreateBook(ctx, Book{"book", "abcd45455", "William Shakespeare", "Julis Casar", FICTION, 0, 0})
 	return nil
 }
 
 func (t *SmartContract) Invoke(ctx contractapi.TransactionContextInterface) ([]byte, error) {
-	fmt.Println("ex02 Invoke")
+	log.Println("ex02 Invoke")
 	if os.Getenv("DEVMODE_ENABLED") != "" {
-		fmt.Println("invoking in devmode")
+		log.Println("invoking in devmode")
 	}
 	function, args := ctx.GetStub().GetFunctionAndParameters()
 	switch args[0] {
@@ -75,34 +75,6 @@ func (t *SmartContract) Invoke(ctx contractapi.TransactionContextInterface) ([]b
 	}
 }
 
-func getQueryResultForQueryString(ctx contractapi.TransactionContextInterface, queryString string) ([]*Book, error) {
-	resultsIterator, err := ctx.GetStub().GetQueryResult(queryString)
-	if err != nil {
-		return nil, err
-	}
-	defer resultsIterator.Close()
-
-	return constructQueryResponseFromIterator(resultsIterator)
-}
-
-func constructQueryResponseFromIterator(resultsIterator shim.StateQueryIteratorInterface) ([]*Book, error) {
-	var assets []*Book
-	for resultsIterator.HasNext() {
-		queryResult, err := resultsIterator.Next()
-		if err != nil {
-			return nil, err
-		}
-		var asset Book
-		err = json.Unmarshal(queryResult.Value, &asset)
-		if err != nil {
-			return nil, err
-		}
-		assets = append(assets, &asset)
-	}
-
-	return assets, nil
-}
-
 func (t *SmartContract) CreateBook(ctx contractapi.TransactionContextInterface, book Book) error {
 	assetBytes, err := json.Marshal(book)
 	if err != nil {
@@ -135,7 +107,8 @@ func (t *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface
 	var i uint8
 	for i = 0; i <= quantity; i++ {
 		instId := uuid.New().String()
-		inst := BookInstance{"bookInstance", instId, bookId, time.Now(), cost}
+		inst := BookInstance{"bookInstance", instId, bookId, time.Now(), cost,
+			AVAILABLE, NEW}
 		instBytes, err := json.Marshal(inst)
 
 		if err != nil {
