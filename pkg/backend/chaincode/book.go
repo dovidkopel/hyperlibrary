@@ -1,9 +1,5 @@
 package chaincode
 
-import (
-	"time"
-)
-
 type Genre uint8
 type Condition uint8
 type Status uint8
@@ -11,6 +7,7 @@ type Status uint8
 const (
 	FICTION Genre = iota
 	NON_FICTION
+	MYSTERY
 )
 
 const (
@@ -36,13 +33,14 @@ type Book struct {
 	Genre     Genre  `json:"genre"`
 	Owned     uint   `json:"owned" default:"0"`
 	Available uint   `json:"available" default:"0"`
+	MaxId     uint16 `json:"maxId"`
 }
 
 type BookInstance struct {
-	DocType   string    `json:"docType" default:"bookInstance"`
-	Id        string    `json:"id"`
-	BookId    string    `json:"bookId"`
-	Purchased time.Time `json:"purchased"`
+	DocType string `json:"docType" default:"bookInstance"`
+	Id      string `json:"id"`
+	BookId  string `json:"bookId"`
+	//Purchased *timestamp.Timestamp `json:"purchased"
 	Cost      float32   `json:"cost"`
 	Status    Status    `json:"status"`
 	Condition Condition `json:"condition"`

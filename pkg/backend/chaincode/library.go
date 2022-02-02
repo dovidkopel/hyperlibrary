@@ -4,11 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 	"log"
 	"os"
-	"time"
+	"strconv"
 )
 
 type SmartContract struct {
@@ -23,9 +22,9 @@ func NewSmartContract(contract contractapi.Contract) *SmartContract {
 func (t *SmartContract) Init(ctx contractapi.TransactionContextInterface) error {
 	log.Println("Init invoked")
 
-	t.CreateBook(ctx, Book{"book", "abcd1234", "Charles Dickens", "A Tale of Two Cities", FICTION, 0, 0})
-	t.CreateBook(ctx, Book{"book", "abcd45454", "William Shakespeare", "Romeo and Juliet", FICTION, 0, 0})
-	t.CreateBook(ctx, Book{"book", "abcd45455", "William Shakespeare", "Julis Casar", FICTION, 0, 0})
+	t.CreateBook(ctx, Book{"book", "abcd1234", "Charles Dickens", "A Tale of Two Cities", FICTION, 0, 0, 0})
+	t.CreateBook(ctx, Book{"book", "abcd45454", "William Shakespeare", "Romeo and Juliet", FICTION, 0, 0, 0})
+	t.CreateBook(ctx, Book{"book", "abcd45455", "William Shakespeare", "Julis Casar", FICTION, 0, 0, 0})
 	return nil
 }
 
@@ -70,6 +69,32 @@ func (t *SmartContract) Invoke(ctx contractapi.TransactionContextInterface) ([]b
 		}
 
 		return ret, nil
+	case "purchase":
+		q, err := strconv.ParseUint(args[3], 10, 8)
+
+		if err != nil {
+			return nil, err
+		}
+		quantity := uint16(q)
+
+		c, err := strconv.ParseFloat(args[4], 32)
+
+		if err != nil {
+			return nil, err
+		}
+		cost := float32(c)
+		insts, err := t.PurchaseBook(ctx, args[2], quantity, cost)
+
+		if err != nil {
+			return nil, err
+		}
+		ret, err := json.Marshal(insts)
+
+		if err != nil {
+			return nil, err
+		}
+
+		return ret, nil
 	default:
 		return nil, errors.New(fmt.Sprintf(`Invalid invoke "%s" function name. Expecting "invoke", "delete", "query", "respond", "mspid", or "event"`, function))
 	}
@@ -90,8 +115,8 @@ func (t *SmartContract) CreateBook(ctx contractapi.TransactionContextInterface, 
 	return ctx.GetStub().PutState("book."+book.Isbn, assetBytes)
 }
 
-func (t *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface, bookId string, quantity uint8, cost float32) ([]BookInstance, error) {
-	assetBytes, err := ctx.GetStub().GetState(bookId)
+func (t *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface, bookId string, quantity uint16, cost float32) ([]BookInstance, error) {
+	assetBytes, err := ctx.GetStub().GetState("book." + bookId)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get asset %s: %v", bookId, err)
@@ -102,12 +127,19 @@ func (t *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface
 
 	var book Book
 	err = json.Unmarshal(assetBytes, &book)
-	instances := []BookInstance{}
 
-	var i uint8
+	log.Println(fmt.Sprintf("There are currently %d owned.", book.Owned))
+
+	var instances []BookInstance
+
+	var i uint16
+	starting_id := book.MaxId + 1
+	var last_id uint16
 	for i = 0; i <= quantity; i++ {
-		instId := uuid.New().String()
-		inst := BookInstance{"bookInstance", instId, bookId, time.Now(), cost,
+		instId := fmt.Sprintf("book.%s-%d", book.Isbn, starting_id+i)
+		last_id = starting_id + i
+
+		inst := BookInstance{instId, "bookInstance", bookId, cost,
 			AVAILABLE, NEW}
 		instBytes, err := json.Marshal(inst)
 
@@ -125,6 +157,7 @@ func (t *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface
 
 	book.Owned += uint(quantity)
 	book.Available += uint(quantity)
+	book.MaxId = last_id
 
 	assetBytes, err = json.Marshal(book)
 	if err != nil {
