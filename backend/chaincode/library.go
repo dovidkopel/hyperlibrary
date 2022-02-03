@@ -5,10 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
+	"hyperlibrary/common"
 	"log"
 	"os"
 	"strconv"
 )
+
+//  Moskowitz x320
 
 type SmartContract struct {
 	contractapi.Contract
@@ -22,9 +25,9 @@ func NewSmartContract(contract contractapi.Contract) *SmartContract {
 func (t *SmartContract) Init(ctx contractapi.TransactionContextInterface) error {
 	log.Println("Init invoked")
 
-	t.CreateBook(ctx, Book{"book", "abcd1234", "Charles Dickens", "A Tale of Two Cities", FICTION, 0, 0, 0})
-	t.CreateBook(ctx, Book{"book", "abcd45454", "William Shakespeare", "Romeo and Juliet", FICTION, 0, 0, 0})
-	t.CreateBook(ctx, Book{"book", "abcd45455", "William Shakespeare", "Julis Casar", FICTION, 0, 0, 0})
+	t.CreateBook(ctx, common.Book{"book", "abcd1234", "Charles Dickens", "A Tale of Two Cities", common.FICTION, 0, 0, 0})
+	t.CreateBook(ctx, common.Book{"book", "abcd45454", "William Shakespeare", "Romeo and Juliet", common.FICTION, 0, 0, 0})
+	t.CreateBook(ctx, common.Book{"book", "abcd45455", "William Shakespeare", "Julis Casar", common.FICTION, 0, 0, 0})
 	return nil
 }
 
@@ -36,7 +39,7 @@ func (t *SmartContract) Invoke(ctx contractapi.TransactionContextInterface) ([]b
 	function, args := ctx.GetStub().GetFunctionAndParameters()
 	switch args[0] {
 	case "create":
-		var book Book
+		var book common.Book
 		err := json.Unmarshal([]byte(args[1]), &book)
 
 		if err != nil {
@@ -100,7 +103,7 @@ func (t *SmartContract) Invoke(ctx contractapi.TransactionContextInterface) ([]b
 	}
 }
 
-func (t *SmartContract) CreateBook(ctx contractapi.TransactionContextInterface, book Book) error {
+func (t *SmartContract) CreateBook(ctx contractapi.TransactionContextInterface, book common.Book) error {
 	assetBytes, err := json.Marshal(book)
 	if err != nil {
 		return err
@@ -115,7 +118,7 @@ func (t *SmartContract) CreateBook(ctx contractapi.TransactionContextInterface, 
 	return ctx.GetStub().PutState("book."+book.Isbn, assetBytes)
 }
 
-func (t *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface, bookId string, quantity uint16, cost float32) ([]BookInstance, error) {
+func (t *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface, bookId string, quantity uint16, cost float32) ([]common.BookInstance, error) {
 	assetBytes, err := ctx.GetStub().GetState("book." + bookId)
 
 	if err != nil {
@@ -125,12 +128,12 @@ func (t *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface
 		return nil, fmt.Errorf("asset %s does not exist", bookId)
 	}
 
-	var book Book
+	var book common.Book
 	err = json.Unmarshal(assetBytes, &book)
 
 	log.Println(fmt.Sprintf("There are currently %d owned.", book.Owned))
 
-	var instances []BookInstance
+	var instances []common.BookInstance
 
 	var i uint16
 	starting_id := book.MaxId + 1
@@ -139,8 +142,8 @@ func (t *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface
 		instId := fmt.Sprintf("book.%s-%d", book.Isbn, starting_id+i)
 		last_id = starting_id + i
 
-		inst := BookInstance{instId, "bookInstance", bookId, cost,
-			AVAILABLE, NEW}
+		inst := common.BookInstance{instId, "bookInstance", bookId, cost,
+			common.AVAILABLE, common.NEW}
 		instBytes, err := json.Marshal(inst)
 
 		if err != nil {
@@ -169,19 +172,19 @@ func (t *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface
 	return instances, nil
 }
 
-func (t *SmartContract) QueryBook(ctx contractapi.TransactionContextInterface, key string, value string) ([]*Book, error) {
+func (t *SmartContract) QueryBook(ctx contractapi.TransactionContextInterface, key string, value string) ([]*common.Book, error) {
 	queryString := fmt.Sprintf(`{"selector":{"docType":"book","%s":"%s"}}`, key, value)
 	return getQueryResultForQueryString(ctx, queryString)
 }
 
-func (t *SmartContract) ListBooks(ctx contractapi.TransactionContextInterface) ([]*Book, error) {
+func (t *SmartContract) ListBooks(ctx contractapi.TransactionContextInterface) ([]*common.Book, error) {
 	return getQueryResultForQueryString(ctx, `{"selector":{"docType":"book"}}`)
 }
 
-func (t *SmartContract) BorrowBook(ctx contractapi.TransactionContextInterface, inst BookInstance, person Person) {
+func (t *SmartContract) BorrowBook(ctx contractapi.TransactionContextInterface, inst common.BookInstance, person common.Person) {
 
 }
 
-func (t *SmartContract) ReturnBook(ctx contractapi.TransactionContextInterface, inst BookInstance) {
+func (t *SmartContract) ReturnBook(ctx contractapi.TransactionContextInterface, inst common.BookInstance) {
 
 }

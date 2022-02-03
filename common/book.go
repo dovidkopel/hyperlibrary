@@ -1,4 +1,4 @@
-package chaincode
+package common
 
 type Genre uint8
 type Condition uint8

@@ -4,7 +4,7 @@ import re
 
 def package():
 
-    os.system('peer lifecycle chaincode package {} --path {}/pkg/backend --lang golang --label {}'.format(out_file, cwd, label))
+    os.system('peer lifecycle chaincode package {} --path {}/backend --lang golang --label {}'.format(out_file, cwd, label))
     print('Packaged: {}'.format(get_hash()))
 
 

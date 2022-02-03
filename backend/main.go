@@ -1,10 +1,10 @@
 package main
 
 import (
-	"github.com/dovidkopel/hyperlibrary/backend/chaincode"
-	"log"
-
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
+	"hyperlibrary/backend/chaincode"
+
+	"log"
 )
 
 func main() {

@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"github.com/hyperledger/fabric-chaincode-go/shim"
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
+	"hyperlibrary/common"
 )
 
-func getQueryResultForQueryString(ctx contractapi.TransactionContextInterface, queryString string) ([]*Book, error) {
+func getQueryResultForQueryString(ctx contractapi.TransactionContextInterface, queryString string) ([]*common.Book, error) {
 	resultsIterator, err := ctx.GetStub().GetQueryResult(queryString)
 	if err != nil {
 		return nil, err
@@ -16,14 +17,14 @@ func getQueryResultForQueryString(ctx contractapi.TransactionContextInterface, q
 	return constructQueryResponseFromIterator(resultsIterator)
 }
 
-func constructQueryResponseFromIterator(resultsIterator shim.StateQueryIteratorInterface) ([]*Book, error) {
-	var assets []*Book
+func constructQueryResponseFromIterator(resultsIterator shim.StateQueryIteratorInterface) ([]*common.Book, error) {
+	var assets []*common.Book
 	for resultsIterator.HasNext() {
 		queryResult, err := resultsIterator.Next()
 		if err != nil {
 			return nil, err
 		}
-		var asset Book
+		var asset common.Book
 		err = json.Unmarshal(queryResult.Value, &asset)
 		if err != nil {
 			return nil, err
