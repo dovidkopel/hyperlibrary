@@ -99,7 +99,7 @@ func (t *SmartContract) Invoke(ctx contractapi.TransactionContextInterface) ([]b
 			return nil, err
 		}
 
-		ret, err := json.Marshal(insts)
+		_, err = json.Marshal(insts)
 
 		if err != nil {
 			return nil, err
@@ -107,7 +107,7 @@ func (t *SmartContract) Invoke(ctx contractapi.TransactionContextInterface) ([]b
 
 		//log.Println(fmt.Sprintf("Purchase ret: %s", string(ret)))
 
-		return ret, nil
+		return nil, nil
 	default:
 		return nil, errors.New(fmt.Sprintf(`Invalid invoke "%s" function name. Expecting "invoke", "delete", "query", "respond", "mspid", or "event"`, function))
 	}
@@ -158,8 +158,8 @@ func (t *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface
 		instId := fmt.Sprintf("book.%s-%d", book.Isbn, starting_id+i)
 		last_id = starting_id + i
 
-		inst := common.BookInstance{instId, "bookInstance", bookId, cost,
-			common.AVAILABLE, common.NEW}
+		inst := common.BookInstance{"bookInstance", instId, bookId, cost,
+			common.AVAILABLE, common.NEW, common.User{}}
 		instBytes, err := json.Marshal(inst)
 
 		if err != nil {
@@ -191,22 +191,126 @@ func (t *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface
 	err = ctx.GetStub().PutState("book."+bookId, assetBytes)
 
 	log.Println(fmt.Sprintf("Created %d instances", quantity))
-	return instances, nil
+	//return instances, nil
+	return nil, nil
 }
 
 func (t *SmartContract) QueryBook(ctx contractapi.TransactionContextInterface, key string, value string) ([]*common.Book, error) {
 	queryString := fmt.Sprintf(`{"selector":{"docType":"book","%s":"%s"}}`, key, value)
-	return getQueryResultForQueryString(ctx, queryString)
+	res, err := getQueryResultForQueryString(ctx, queryString)
+
+	if err != nil {
+		return nil, err
+	}
+
+	var books []*common.Book
+	for i := range res {
+		bookBytes := res[i]
+		var book common.Book
+		err = json.Unmarshal(bookBytes, &book)
+		books = append(books, &book)
+	}
+	return books, nil
 }
 
 func (t *SmartContract) ListBooks(ctx contractapi.TransactionContextInterface) ([]*common.Book, error) {
-	return getQueryResultForQueryString(ctx, `{"selector":{"docType":"book"}}`)
+	res, err := getQueryResultForQueryString(ctx, `{"selector":{"docType":"book"}}`)
+
+	if err != nil {
+		return nil, err
+	}
+
+	var books []*common.Book
+	for i := range res {
+		bookBytes := res[i]
+		var book common.Book
+		err = json.Unmarshal(bookBytes, &book)
+		books = append(books, &book)
+	}
+	return books, nil
 }
 
-func (t *SmartContract) BorrowBook(ctx contractapi.TransactionContextInterface, inst common.BookInstance, person common.Person) {
+func (t *SmartContract) ListBookInstances(ctx contractapi.TransactionContextInterface, isbn string) ([]*common.BookInstance, error) {
+	queryString := fmt.Sprintf(`{"selector":{"docType":"bookInstance", "bookId": "%s"}}`, isbn)
+	res, err := getQueryResultForQueryString(ctx, queryString)
 
+	if err != nil {
+		return nil, err
+	}
+
+	var books []*common.BookInstance
+	for i := range res {
+		bookBytes := res[i]
+		var book common.BookInstance
+		err = json.Unmarshal(bookBytes, &book)
+		books = append(books, &book)
+	}
+	return books, nil
 }
 
-func (t *SmartContract) ReturnBook(ctx contractapi.TransactionContextInterface, inst common.BookInstance) {
+func (t *SmartContract) GetBook(ctx contractapi.TransactionContextInterface, isbn string) (*common.Book, error) {
+	bookBytes, err := ctx.GetStub().GetState(fmt.Sprintf("book.%s", isbn))
+
+	if err != nil {
+		return nil, err
+	}
+
+	var book common.Book
+	err = json.Unmarshal(bookBytes, &book)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &book, nil
+}
+
+func (t *SmartContract) UpdateBook(ctx contractapi.TransactionContextInterface, book *common.Book) error {
+	bookBytes, err := json.Marshal(book)
+
+	if err != nil {
+		return err
+	}
+
+	ctx.GetStub().PutState(fmt.Sprintf("book.%s", book.Isbn), bookBytes)
+	return nil
+}
+
+func (t *SmartContract) BorrowBookInstance(ctx contractapi.TransactionContextInterface, instId string) error {
+	instBytes, err := ctx.GetStub().GetState(fmt.Sprintf("bookInstance.%s", instId))
+
+	if err != nil {
+		return err
+	}
+
+	var inst common.BookInstance
+	err = json.Unmarshal(instBytes, &inst)
+
+	if err != nil {
+		return err
+	}
+
+	book, err := t.GetBook(ctx, inst.BookId)
+
+	if inst.Status == common.AVAILABLE {
+		clientId, _ := ctx.GetClientIdentity().GetID()
+		name, _, _ := ctx.GetClientIdentity().GetAttributeValue("Name")
+
+		inst.Borrower = common.User{clientId, name}
+		inst.Status = common.OUT
+		book.Available -= 1
+		err = t.UpdateBook(ctx, book)
+
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	return nil
+}
+
+func (t *SmartContract) ReturnBook(ctx contractapi.TransactionContextInterface, instId string) {
 
 }

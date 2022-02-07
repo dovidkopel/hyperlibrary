@@ -2,6 +2,7 @@ package main
 
 import (
 	"hyperlibrary/client/app"
+	"hyperlibrary/common"
 	"log"
 	"os"
 )
@@ -13,8 +14,7 @@ func main() {
 		log.Fatalf("Error setting DISCOVERY_AS_LOCALHOST environemnt variable: %v", err)
 	}
 
-	l := app.New("libraryApp6@org1.example.com")
-	//print(l.ListBooks())
+	l := app.New("libraryApp@org1.example.com")
 	books := l.ListBooks()
 	for i := range books {
 		b := books[i]
@@ -22,7 +22,21 @@ func main() {
 	}
 
 	//l.CreateBook(common.Book{"book", "foobar412443", "F. Scott Fitzgerald", "Blah1", common.FICTION, 0, 0, 0})
-	l.PurchaseBook("abcd1234", 1, 10.50)
+	//l.PurchaseBook("foobar412443", 2, 10.50)
+
+	bookInstances := l.ListBooksInstances("foobar412443")
+
+	var toTakeOut common.BookInstance = common.BookInstance{}
+	for i := range bookInstances {
+		b := bookInstances[i]
+
+		if b.Status == common.AVAILABLE {
+			toTakeOut = b
+			break
+		}
+	}
+
+	l.BorrowBook(toTakeOut.Id)
 
 	books = l.ListBooks()
 	for i := range books {

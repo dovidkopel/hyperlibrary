@@ -36,6 +36,11 @@ type Book struct {
 	MaxId     uint16 `json:"maxId"`
 }
 
+type User struct {
+	ClientId string `json:"clientId"`
+	Name     string `json:"name"`
+}
+
 type BookInstance struct {
 	DocType string `json:"docType" default:"bookInstance"`
 	Id      string `json:"id"`
@@ -44,11 +49,5 @@ type BookInstance struct {
 	Cost      float32   `json:"cost"`
 	Status    Status    `json:"status"`
 	Condition Condition `json:"condition"`
-}
-
-type Person struct {
-	Id        string
-	FirstName string
-	LastName  string
-	phone     string
+	Borrower  User      `json:"borrower"`
 }

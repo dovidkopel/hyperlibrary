@@ -84,11 +84,14 @@ func CreateAppUser(wallet *gateway.Wallet, id string) error {
 
 	var attrs []mspclient.Attribute
 
-	attrs = append(attrs, mspclient.Attribute{"Name", id, true})
+	attrs = append(attrs,
+		mspclient.Attribute{"Name", id, true},
+		mspclient.Attribute{"Role", "library", true},
+	)
 
 	secret, err := mspClient.Register(&mspclient.RegistrationRequest{
 		Name:        id,
-		Type:        "peer",
+		Type:        "client",
 		Affiliation: "org1.department1",
 		Attributes:  attrs,
 	})

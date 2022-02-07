@@ -138,9 +138,9 @@ for org in orgs:
 
 # if approved == len(orgs):
 commit()
-get_committed()
+# get_committed()
 
 invoke_init()
 
-get_committed()
-get_installed()
+# get_committed()
+# get_installed()

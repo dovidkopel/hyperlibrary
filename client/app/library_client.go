@@ -98,6 +98,20 @@ func (l *LibraryClient) ListBooks() []common.Book {
 	return books
 }
 
+func (l *LibraryClient) ListBooksInstances(isbn string) []common.BookInstance {
+	print("Listing book instances")
+	resp, err := l.contract.EvaluateTransaction("ListBookInstances", isbn)
+
+	var books []common.BookInstance
+	err = json.Unmarshal(resp, &books)
+
+	if err != nil {
+		log.Fatalf(err.Error())
+	}
+
+	return books
+}
+
 func (l *LibraryClient) CreateBook(book common.Book) error {
 	payload, err := json.Marshal(book)
 	_, err = l.contract.SubmitTransaction("Invoke", "create", string(payload))
@@ -124,4 +138,13 @@ func (l *LibraryClient) PurchaseBook(isbn string, quantity int, cost float32) ([
 	json.Unmarshal(instBytes, &insts)
 
 	return insts, nil
+}
+
+func (l *LibraryClient) BorrowBook(bookId string) error {
+	_, err := l.contract.SubmitTransaction("BorrowBookInstance", bookId)
+
+	if err != nil {
+		return err
+	}
+	return nil
 }
