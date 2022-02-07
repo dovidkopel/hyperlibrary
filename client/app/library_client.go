@@ -3,86 +3,53 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/hyperledger/fabric-sdk-go/pkg/common/providers/core"
+	"github.com/hyperledger/fabric-sdk-go/pkg/common/providers/fab"
 	"github.com/hyperledger/fabric-sdk-go/pkg/core/config"
 	"github.com/hyperledger/fabric-sdk-go/pkg/gateway"
 	"hyperlibrary/common"
-	"io/ioutil"
 	"log"
+	"os"
 	"path/filepath"
 )
 
 type LibraryClient struct {
+	network  *gateway.Network
+	gateway  *gateway.Gateway
+	contract *gateway.Contract
 }
 
 var fabric_samples = "/home/dkopel/go/src/github.com/dovidkopel/fabric-samples"
 
-func populateWallet(wallet *gateway.Wallet) error {
-	log.Println("============ Populating wallet ============")
-	credPath := filepath.Join(
-		fabric_samples,
-		"test-network",
-		"organizations",
-		"peerOrganizations",
-		"org1.example.com",
-		"users",
-		"User1@org1.example.com",
-		//"Admin@org1.example.com",
-		"msp",
-	)
-
-	certPath := filepath.Join(credPath, "signcerts", "cert.pem")
-	// read the certificate pem
-	cert, err := ioutil.ReadFile(filepath.Clean(certPath))
-	if err != nil {
-		return err
-	}
-
-	keyDir := filepath.Join(credPath, "keystore")
-	// there's a single file in this dir containing the private key
-	files, err := ioutil.ReadDir(keyDir)
-	if err != nil {
-		return err
-	}
-	if len(files) != 1 {
-		return fmt.Errorf("keystore folder should have contain one file")
-	}
-	keyPath := filepath.Join(keyDir, files[0].Name())
-	key, err := ioutil.ReadFile(filepath.Clean(keyPath))
-	if err != nil {
-		return err
-	}
-
-	identity := gateway.NewX509Identity("Org1MSP", string(cert), string(key))
-
-	return wallet.Put("appUser", identity)
+func getConfig() core.ConfigProvider {
+	os.Setenv("FABRIC_SDK_GO_PROJECT_PATH", fabric_samples)
+	//os.Setenv("CRYPTOCONFIG_FIXTURES_PATH", "test-network/organizations/cryptogen")
+	//ccpPath := filepath.Join(
+	//	"config.yaml",
+	//)
+	ccpPath := "/home/dkopel/go/src/hyperlibrary/client/config.yaml"
+	return config.FromFile(filepath.Clean(ccpPath))
 }
 
-func (l *LibraryClient) Init() *gateway.Contract {
+func New(userId string) LibraryClient {
 	wallet, err := gateway.NewFileSystemWallet("wallet")
 	if err != nil {
 		log.Fatalf("Failed to create wallet: %v", err)
 	}
 
-	if !wallet.Exists("appUser") {
-		err = populateWallet(wallet)
+	if !wallet.Exists(userId) {
+		//err = populateWallet(wallet)
+		err = CreateAppUser(wallet, userId)
 		if err != nil {
 			log.Fatalf("Failed to populate wallet contents: %v", err)
 		}
 	}
 
-	ccpPath := filepath.Join(
-		fabric_samples,
-		"test-network",
-		"organizations",
-		"peerOrganizations",
-		"org1.example.com",
-		"connection-org1.yaml",
+	gw, err := gateway.Connect(
+		gateway.WithConfig(getConnectionConfig()),
+		gateway.WithIdentity(wallet, userId),
 	)
 
-	gw, err := gateway.Connect(
-		gateway.WithConfig(config.FromFile(filepath.Clean(ccpPath))),
-		gateway.WithIdentity(wallet, "appUser"),
-	)
 	if err != nil {
 		log.Fatalf("Failed to connect to gateway: %v", err)
 	}
@@ -97,21 +64,64 @@ func (l *LibraryClient) Init() *gateway.Contract {
 		log.Fatalf("Failed to get network: %v", err)
 	}
 
-	return network.GetContract("hyperlibrary")
+	ll := LibraryClient{}
+	ll.network = network
+	ll.gateway = gw
+	ll.contract = network.GetContract("hyperlibrary")
+	ll.HandleEvents()
+
+	return ll
+}
+
+func eventHandler(c <-chan *fab.FilteredBlockEvent) {
+	v := <-c
+	log.Println(v)
+}
+
+func (l *LibraryClient) HandleEvents() {
+	_, _, _ = l.contract.RegisterEvent("Book.Created")
+	_, ch, _ := l.network.RegisterFilteredBlockEvent()
+	go eventHandler(ch)
 }
 
 func (l *LibraryClient) ListBooks() []common.Book {
-	contract := l.Init()
 	print("Listing books")
-	resp, err := contract.SubmitTransaction("ListBooks")
+	resp, err := l.contract.EvaluateTransaction("ListBooks")
 
 	var books []common.Book
-	json.Unmarshal(resp, books)
+	json.Unmarshal(resp, &books)
 
 	if err != nil {
-		print(err.Error())
+		log.Fatalf(err.Error())
 	}
 
-	print(string(resp))
 	return books
+}
+
+func (l *LibraryClient) CreateBook(book common.Book) error {
+	payload, err := json.Marshal(book)
+	_, err = l.contract.SubmitTransaction("Invoke", "create", string(payload))
+
+	if err != nil {
+		log.Fatalf(err.Error())
+		return err
+	}
+	return nil
+}
+
+func (l *LibraryClient) PurchaseBook(isbn string, quantity int, cost float32) ([]common.BookInstance, error) {
+	instBytes, err := l.contract.SubmitTransaction("Invoke", "purchase", isbn,
+		fmt.Sprintf("%d", quantity),
+		fmt.Sprintf("%f", cost),
+	)
+
+	if err != nil {
+		log.Fatalf(err.Error())
+		return nil, err
+	}
+
+	var insts []common.BookInstance
+	json.Unmarshal(instBytes, &insts)
+
+	return insts, nil
 }

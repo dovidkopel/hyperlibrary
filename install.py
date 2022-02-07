@@ -1,3 +1,6 @@
+import json
+import subprocess
+
 from __init__ import *
 import re
 
@@ -79,6 +82,7 @@ def commit():
     '--version {} '.format(version) + \
     '--sequence {} --init-required'.format(sequence))
     print(out)
+    get_sequence(True)
 
 
 def get_installed():

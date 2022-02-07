@@ -37,6 +37,10 @@ func (t *SmartContract) Invoke(ctx contractapi.TransactionContextInterface) ([]b
 		log.Println("invoking in devmode")
 	}
 	function, args := ctx.GetStub().GetFunctionAndParameters()
+	name, _, _ := ctx.GetClientIdentity().GetAttributeValue("Name")
+	clientId, _ := ctx.GetClientIdentity().GetID()
+	log.Println(fmt.Sprintf("Client id: %s %s", clientId, name))
+
 	switch args[0] {
 	case "create":
 		var book common.Book
@@ -73,29 +77,35 @@ func (t *SmartContract) Invoke(ctx contractapi.TransactionContextInterface) ([]b
 
 		return ret, nil
 	case "purchase":
-		q, err := strconv.ParseUint(args[3], 10, 8)
+		isbn := args[1]
+		q, err := strconv.ParseUint(args[2], 10, 8)
 
 		if err != nil {
 			return nil, err
 		}
 		quantity := uint16(q)
 
-		c, err := strconv.ParseFloat(args[4], 32)
+		c, err := strconv.ParseFloat(args[3], 32)
 
 		if err != nil {
 			return nil, err
 		}
 		cost := float32(c)
-		insts, err := t.PurchaseBook(ctx, args[2], quantity, cost)
+
+		insts, err := t.PurchaseBook(ctx, isbn, quantity, cost)
+		print("foo")
 
 		if err != nil {
 			return nil, err
 		}
+
 		ret, err := json.Marshal(insts)
 
 		if err != nil {
 			return nil, err
 		}
+
+		//log.Println(fmt.Sprintf("Purchase ret: %s", string(ret)))
 
 		return ret, nil
 	default:
@@ -115,10 +125,15 @@ func (t *SmartContract) CreateBook(ctx contractapi.TransactionContextInterface, 
 		return errors.New(fmt.Sprintf(`A book with the "%s" ISBN already exists!`, book.Isbn))
 	}
 
+	ctx.GetStub().SetEvent("Book.Created", assetBytes)
 	return ctx.GetStub().PutState("book."+book.Isbn, assetBytes)
 }
 
-func (t *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface, bookId string, quantity uint16, cost float32) ([]common.BookInstance, error) {
+func (t *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface, bookId string, quantity uint16, cost float32) ([]*common.BookInstance, error) {
+	if quantity < 1 {
+		return nil, errors.New("Quantity must be at least 1!")
+	}
+
 	assetBytes, err := ctx.GetStub().GetState("book." + bookId)
 
 	if err != nil {
@@ -133,11 +148,12 @@ func (t *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface
 
 	log.Println(fmt.Sprintf("There are currently %d owned.", book.Owned))
 
-	var instances []common.BookInstance
+	var instances []*common.BookInstance
 
 	var i uint16
 	starting_id := book.MaxId + 1
 	var last_id uint16
+
 	for i = 0; i <= quantity; i++ {
 		instId := fmt.Sprintf("book.%s-%d", book.Isbn, starting_id+i)
 		last_id = starting_id + i
@@ -147,15 +163,19 @@ func (t *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface
 		instBytes, err := json.Marshal(inst)
 
 		if err != nil {
-			return instances, err
+			log.Println("Unable to marshal instance!")
+			return nil, err
 		}
 
 		err = ctx.GetStub().PutState("bookInstance."+instId, instBytes)
+		ctx.GetStub().SetEvent("BookInstance.Created", instBytes)
+
 		if err != nil {
-			return instances, err
+			log.Println("Unable to store instance state!")
+			return nil, err
 		}
 
-		instances = append(instances, inst)
+		instances = append(instances, &inst)
 	}
 
 	book.Owned += uint(quantity)
@@ -164,11 +184,13 @@ func (t *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface
 
 	assetBytes, err = json.Marshal(book)
 	if err != nil {
-		return instances, err
+		log.Println("Unable to marshal book!")
+		return nil, err
 	}
 
 	err = ctx.GetStub().PutState("book."+bookId, assetBytes)
 
+	log.Println(fmt.Sprintf("Created %d instances", quantity))
 	return instances, nil
 }
 

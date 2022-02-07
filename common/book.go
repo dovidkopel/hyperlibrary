@@ -26,7 +26,7 @@ const (
 )
 
 type Book struct {
-	DocType   string `json:"docType" default:"book"`
+	DocType   string `json:"docType" default:"book" `
 	Isbn      string `json:"isbn"`
 	Author    string `json:"author"`
 	Title     string `json:"title"`

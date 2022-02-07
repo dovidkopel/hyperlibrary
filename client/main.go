@@ -13,6 +13,20 @@ func main() {
 		log.Fatalf("Error setting DISCOVERY_AS_LOCALHOST environemnt variable: %v", err)
 	}
 
-	l := app.LibraryClient{}
-	l.ListBooks()
+	l := app.New("libraryApp6@org1.example.com")
+	//print(l.ListBooks())
+	books := l.ListBooks()
+	for i := range books {
+		b := books[i]
+		log.Println(b)
+	}
+
+	//l.CreateBook(common.Book{"book", "foobar412443", "F. Scott Fitzgerald", "Blah1", common.FICTION, 0, 0, 0})
+	l.PurchaseBook("abcd1234", 1, 10.50)
+
+	books = l.ListBooks()
+	for i := range books {
+		b := books[i]
+		log.Println(b)
+	}
 }
