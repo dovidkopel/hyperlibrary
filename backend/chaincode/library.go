@@ -7,18 +7,23 @@ import (
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 	"hyperlibrary/common"
 	"log"
+	"math"
 	"os"
 	"strconv"
+	"time"
 )
-
-//  Moskowitz x320
 
 type SmartContract struct {
 	contractapi.Contract
+	BorrowDuration time.Duration
+	LateFeePerDay  float64
 }
 
 func NewSmartContract(contract contractapi.Contract) *SmartContract {
 	s := &SmartContract{Contract: contract}
+	s.LateFeePerDay = .50
+	bd, _ := time.ParseDuration(fmt.Sprintf("%dh", 14*24))
+	s.BorrowDuration = bd
 	return s
 }
 
@@ -155,11 +160,11 @@ func (t *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface
 	var last_id uint16
 
 	for i = 0; i <= quantity; i++ {
-		instId := fmt.Sprintf("book.%s-%d", book.Isbn, starting_id+i)
+		instId := fmt.Sprintf("%s-%d", book.Isbn, starting_id+i)
 		last_id = starting_id + i
 
 		inst := common.BookInstance{"bookInstance", instId, bookId, cost,
-			common.AVAILABLE, common.NEW, common.User{}}
+			common.AVAILABLE, common.NEW, time.Time{}, common.User{}}
 		instBytes, err := json.Marshal(inst)
 
 		if err != nil {
@@ -230,9 +235,35 @@ func (t *SmartContract) ListBooks(ctx contractapi.TransactionContextInterface) (
 	return books, nil
 }
 
-func (t *SmartContract) ListBookInstances(ctx contractapi.TransactionContextInterface, isbn string) ([]*common.BookInstance, error) {
-	queryString := fmt.Sprintf(`{"selector":{"docType":"bookInstance", "bookId": "%s"}}`, isbn)
-	res, err := getQueryResultForQueryString(ctx, queryString)
+func (t *SmartContract) ListBookInstances(ctx contractapi.TransactionContextInterface, isbn string, statuses []common.Status) ([]*common.BookInstance, error) {
+	selector := map[string]interface{}{
+		"docType": "bookInstance",
+		"bookId":  isbn,
+	}
+
+	if len(statuses) > 0 {
+		var orStatuses []map[string]common.Status
+		for i := range statuses {
+			orStatuses = append(orStatuses, map[string]common.Status{
+				"status": statuses[i],
+			})
+		}
+		selector["$or"] = orStatuses
+	} else {
+
+	}
+
+	query := map[string]interface{}{
+		"selector": selector,
+	}
+
+	queryString, err := json.Marshal(query)
+
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := getQueryResultForQueryString(ctx, string(queryString))
 
 	if err != nil {
 		return nil, err
@@ -265,6 +296,23 @@ func (t *SmartContract) GetBook(ctx contractapi.TransactionContextInterface, isb
 	return &book, nil
 }
 
+func (t *SmartContract) GetBookInstance(ctx contractapi.TransactionContextInterface, instId string) (*common.BookInstance, error) {
+	bookBytes, err := ctx.GetStub().GetState(fmt.Sprintf("bookInstance.%s", instId))
+
+	if err != nil {
+		return nil, err
+	}
+
+	var bookInstance common.BookInstance
+	err = json.Unmarshal(bookBytes, &bookInstance)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &bookInstance, nil
+}
+
 func (t *SmartContract) UpdateBook(ctx contractapi.TransactionContextInterface, book *common.Book) error {
 	bookBytes, err := json.Marshal(book)
 
@@ -293,11 +341,28 @@ func (t *SmartContract) BorrowBookInstance(ctx contractapi.TransactionContextInt
 	book, err := t.GetBook(ctx, inst.BookId)
 
 	if inst.Status == common.AVAILABLE {
+		log.Println(fmt.Sprintf("Going to borrow book \"%s\"", instId))
 		clientId, _ := ctx.GetClientIdentity().GetID()
 		name, _, _ := ctx.GetClientIdentity().GetAttributeValue("Name")
 
 		inst.Borrower = common.User{clientId, name}
 		inst.Status = common.OUT
+
+		//inst.DueDate = time.Now().Add(t.BorrowDuration )
+		dd, _ := time.ParseDuration(fmt.Sprintf("-%dh", 5*24))
+		inst.DueDate = time.Now().Add(dd).Round(time.Hour)
+		instBytes1, err := json.Marshal(&inst)
+
+		if err != nil {
+			return err
+		}
+
+		err = ctx.GetStub().PutState(fmt.Sprintf("bookInstance.%s", instId), instBytes1)
+
+		if err != nil {
+			return err
+		}
+
 		book.Available -= 1
 		err = t.UpdateBook(ctx, book)
 
@@ -305,12 +370,93 @@ func (t *SmartContract) BorrowBookInstance(ctx contractapi.TransactionContextInt
 			return err
 		}
 
+		ctx.GetStub().SetEvent("BookInstance.Borrowed", instBytes1)
+
 		return nil
+	} else if inst.Status == common.OUT {
+		return errors.New("This book is already out!")
 	}
 
 	return nil
 }
 
-func (t *SmartContract) ReturnBook(ctx contractapi.TransactionContextInterface, instId string) {
+func (t *SmartContract) ReturnBookInstance(ctx contractapi.TransactionContextInterface, instId string) (common.LateFee, error) {
+	instBytes, err := ctx.GetStub().GetState(fmt.Sprintf("bookInstance.%s", instId))
 
+	if err != nil {
+		return common.LateFee{}, err
+	}
+
+	var inst common.BookInstance
+	err = json.Unmarshal(instBytes, &inst)
+
+	if err != nil {
+		return common.LateFee{}, err
+	}
+
+	book, err := t.GetBook(ctx, inst.BookId)
+
+	if err != nil {
+		return common.LateFee{}, err
+	}
+
+	if inst.Status == common.OUT {
+		now := time.Now()
+
+		// Late fee
+		if inst.DueDate.Before(now) {
+			diff := now.Sub(inst.DueDate).Round(time.Hour)
+			diffDays := math.RoundToEven(diff.Hours() / 24)
+
+			if diffDays > 0 {
+				log.Println("A late fee is owed")
+				id := ctx.GetStub().GetTxID()
+				fee := t.LateFeePerDay * diffDays
+				ts, _ := ctx.GetStub().GetTxTimestamp()
+				date := time.Unix(ts.Seconds, int64(ts.Nanos)).Round(time.Hour).UTC()
+
+				lateFee := common.LateFee{id, inst.Borrower, fee, date, false}
+				log.Println(lateFee)
+				lateFeeBytes, err := json.Marshal(lateFee)
+
+				if err != nil {
+					return common.LateFee{}, err
+				}
+
+				err = ctx.GetStub().PutState(fmt.Sprintf("lateFee.%s", id), lateFeeBytes)
+
+				if err != nil {
+					return common.LateFee{}, err
+				}
+
+				err = ctx.GetStub().SetEvent("LateFee.Created", lateFeeBytes)
+
+				if err != nil {
+					return common.LateFee{}, err
+				}
+
+				return lateFee, nil
+			}
+		}
+
+		inst.Status = common.AVAILABLE
+		inst.DueDate = time.Time{}
+		inst.Borrower = common.User{}
+
+		instBytes, err = json.Marshal(inst)
+
+		if err != nil {
+			return common.LateFee{}, err
+		}
+
+		ctx.GetStub().PutState(fmt.Sprintf("bookInstance.%s", instId), instBytes)
+		ctx.GetStub().SetEvent("BookInstance.Returned", instBytes)
+
+		book.Available += 1
+		t.UpdateBook(ctx, book)
+	} else {
+		errors.New("Book cannot be returned if it is not out!")
+	}
+
+	return common.LateFee{}, err
 }

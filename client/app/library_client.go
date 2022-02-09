@@ -80,6 +80,9 @@ func eventHandler(c <-chan *fab.FilteredBlockEvent) {
 
 func (l *LibraryClient) HandleEvents() {
 	_, _, _ = l.contract.RegisterEvent("Book.Created")
+	_, _, _ = l.contract.RegisterEvent("BookInstance.Created")
+	_, _, _ = l.contract.RegisterEvent("BookInstance.Borrowed")
+	_, _, _ = l.contract.RegisterEvent("BookInstance.Returned")
 	_, ch, _ := l.network.RegisterFilteredBlockEvent()
 	go eventHandler(ch)
 }
@@ -100,7 +103,11 @@ func (l *LibraryClient) ListBooks() []common.Book {
 
 func (l *LibraryClient) ListBooksInstances(isbn string) []common.BookInstance {
 	print("Listing book instances")
-	resp, err := l.contract.EvaluateTransaction("ListBookInstances", isbn)
+	resp, err := l.contract.EvaluateTransaction("ListBookInstances", isbn, "[]")
+
+	if err != nil {
+		log.Fatalf(err.Error())
+	}
 
 	var books []common.BookInstance
 	err = json.Unmarshal(resp, &books)
@@ -140,6 +147,23 @@ func (l *LibraryClient) PurchaseBook(isbn string, quantity int, cost float32) ([
 	return insts, nil
 }
 
+func (l *LibraryClient) GetBookInstance(instId string) (common.BookInstance, error) {
+	bookInstanceBytes, err := l.contract.SubmitTransaction("GetBookInstance", instId)
+
+	if err != nil {
+		return common.BookInstance{}, err
+	}
+
+	var bookInstance common.BookInstance
+	err = json.Unmarshal(bookInstanceBytes, &bookInstance)
+
+	if err != nil {
+		return common.BookInstance{}, err
+	}
+
+	return bookInstance, err
+}
+
 func (l *LibraryClient) BorrowBook(bookId string) error {
 	_, err := l.contract.SubmitTransaction("BorrowBookInstance", bookId)
 
@@ -147,4 +171,21 @@ func (l *LibraryClient) BorrowBook(bookId string) error {
 		return err
 	}
 	return nil
+}
+
+func (l *LibraryClient) ReturnBook(instId string) (common.LateFee, error) {
+	lateFeeBytes, err := l.contract.SubmitTransaction("ReturnBookInstance", instId)
+
+	if err != nil {
+		return common.LateFee{}, err
+	}
+
+	var lateFee common.LateFee
+	err = json.Unmarshal(lateFeeBytes, &lateFee)
+
+	if err != nil {
+		return common.LateFee{}, err
+	}
+
+	return lateFee, nil
 }

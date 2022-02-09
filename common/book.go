@@ -1,28 +1,31 @@
 package common
 
-type Genre uint8
-type Condition uint8
-type Status uint8
+import "time"
+
+type Genre string
+type Condition string
+type Status string
 
 const (
-	FICTION Genre = iota
-	NON_FICTION
-	MYSTERY
+	FICTION     Genre = "FICTION"
+	NON_FICTION       = "NON_FICTION"
+	MYSTERY           = "MYSTERY"
 )
 
 const (
-	NEW Condition = iota
-	GOOD
-	WORN
-	RIPPED
-	PAGES_MISSING
+	NEW           Condition = "NEW"
+	GOOD                    = "GOOD"
+	WORN                    = "WORN"
+	RIPPED                  = "RIPPED"
+	PAGES_MISSING           = "PAGES_MISSING"
 )
 
 const (
-	AVAILABLE Status = iota
-	RESERVED
-	OUT
-	LOST
+	AVAILABLE Status = "AVAILABLE"
+	RETURNED         = "RETURNED"
+	RESERVED         = "RESERVED"
+	OUT              = "OUT"
+	LOST             = "LOST"
 )
 
 type Book struct {
@@ -49,5 +52,14 @@ type BookInstance struct {
 	Cost      float32   `json:"cost"`
 	Status    Status    `json:"status"`
 	Condition Condition `json:"condition"`
+	DueDate   time.Time `json:"dueDate"`
 	Borrower  User      `json:"borrower"`
+}
+
+type LateFee struct {
+	Id       string    `json:"id"`
+	Borrower User      `json:"borrower"`
+	Fee      float64   `json:"fee"`
+	Date     time.Time `json:"date"`
+	Paid     bool      `json:"paid"`
 }
