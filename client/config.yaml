@@ -404,7 +404,7 @@ certificateAuthorities:
       # Client key and cert for SSL handshake with Fabric CA
       client:
         key:
-          path: ${FABRIC_SDK_GO_PROJECT_PATH}/test-network/organizations/peerOrganizations/org1.example.com/msp/keystore/a23d8e892b4ae455bf7dddced11bfe15b5ae7b4ee0e2097e6ec1801d203690dc_sk
+          path: ${FABRIC_SDK_GO_PROJECT_PATH}/test-network/organizations/peerOrganizations/org1.example.com/msp/keystore/2ccce79bf261cd3f0e20bd2ca1346e38be8ab8cca7101857edcc3395ac448d53_sk
         cert:
           path: ${FABRIC_SDK_GO_PROJECT_PATH}/test-network/organizations/peerOrganizations/org1.example.com/msp/signcerts/cert.pem
 

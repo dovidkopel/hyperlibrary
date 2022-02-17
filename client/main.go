@@ -1,9 +1,7 @@
 package main
 
 import (
-	"fmt"
 	"hyperlibrary/client/app"
-	"hyperlibrary/common"
 	"log"
 	"os"
 )
@@ -30,34 +28,46 @@ func main() {
 	//var toTakeOut common.BookInstance = common.BookInstance{}
 	//for i := range bookInstances {
 	//	b := bookInstances[i]
-	//log.Println(b)
-	//if b.Status == common.AVAILABLE {
-	//	toTakeOut = b
-	//	break
-	//}
+	//	log.Println(b)
+	//	if b.Status == common.AVAILABLE {
+	//		toTakeOut = b
+	//		break
+	//	}
 	//}
 	//
-	bookInstance, err := l.GetBookInstance("foobar5565554-11")
+	//err = l.BorrowBook(toTakeOut.Id)
+	//if err != nil {
+	//	log.Fatalf(err.Error())
+	//}
+	//
+	//lateFee, err := l.ReturnBook(toTakeOut.Id)
+	//if err != nil {
+	//	log.Fatalf(err.Error())
+	//}
+	//
+	//log.Println(fmt.Sprintf("Late Fee: %s", lateFee))
 
-	if err != nil {
-		log.Fatalf(err.Error())
-	}
-
-	log.Println("Book Instance", bookInstance)
-
-	if bookInstance.Status == common.AVAILABLE {
-		err = l.BorrowBook("foobar5565554-11")
-		if err != nil {
-			log.Fatalf(err.Error())
-		}
-	}
-
-	lateFee, err := l.ReturnBook("foobar5565554-11")
-	if err != nil {
-		log.Fatalf(err.Error())
-	}
-
-	log.Println(fmt.Sprintf("Late Fee: %s", lateFee))
+	//bookInstance, err := l.GetBookInstance("foobar5565554-1")
+	//
+	//if err != nil {
+	//	log.Fatalf(err.Error())
+	//}
+	//
+	//log.Println("Book Instance", bookInstance)
+	//
+	//if bookInstance.Status == common.AVAILABLE {
+	//	err = l.BorrowBook("foobar5565554-1`")
+	//	if err != nil {
+	//		log.Fatalf(err.Error())
+	//	}
+	//}
+	//
+	//lateFee, err := l.ReturnBook("foobar5565554-1")
+	//if err != nil {
+	//	log.Fatalf(err.Error())
+	//}
+	//
+	//log.Println(fmt.Sprintf("Late Fee: %s", lateFee))
 
 	////
 	//books := l.ListBooks()
@@ -65,4 +75,21 @@ func main() {
 	//	b := books[i]
 	//	log.Println(b)
 	//}
+
+	users, err := l.ListUsersOwingFees()
+	for i := range users {
+		user := users[i]
+		log.Println("Users owing fees", user)
+
+		for k, _ := range user.FeesOwed {
+			p, err := l.PayLateFee(1.0, []string{k})
+
+			if err != nil {
+				log.Fatalf(err.Error())
+			}
+
+			log.Println("Payment", p)
+			break
+		}
+	}
 }

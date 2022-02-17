@@ -5,7 +5,7 @@ import (
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 )
 
-func getQueryResultForQueryString(ctx contractapi.TransactionContextInterface, queryString string) ([][]byte, error) {
+func GetQueryResultForQueryString(ctx contractapi.TransactionContextInterface, queryString string) ([][]byte, error) {
 	resultsIterator, err := ctx.GetStub().GetQueryResult(queryString)
 	if err != nil {
 		return nil, err

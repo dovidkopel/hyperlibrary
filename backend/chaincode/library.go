@@ -7,7 +7,6 @@ import (
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 	"hyperlibrary/common"
 	"log"
-	"math"
 	"os"
 	"strconv"
 	"time"
@@ -36,7 +35,7 @@ func (t *SmartContract) Init(ctx contractapi.TransactionContextInterface) error 
 	return nil
 }
 
-func (t *SmartContract) Invoke(ctx contractapi.TransactionContextInterface) ([]byte, error) {
+func (t *SmartContract) Invoke(ctx contractapi.TransactionContextInterface) (string, error) {
 	log.Println("ex02 Invoke")
 	if os.Getenv("DEVMODE_ENABLED") != "" {
 		log.Println("invoking in devmode")
@@ -52,7 +51,7 @@ func (t *SmartContract) Invoke(ctx contractapi.TransactionContextInterface) ([]b
 		err := json.Unmarshal([]byte(args[1]), &book)
 
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 
 		book.DocType = "book"
@@ -62,38 +61,38 @@ func (t *SmartContract) Invoke(ctx contractapi.TransactionContextInterface) ([]b
 		err = t.CreateBook(ctx, book)
 
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 
-		return nil, nil
+		return "", nil
 	case "list":
 		// Deletes an entity from its state
 		books, err := t.ListBooks(ctx)
 
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 
 		ret, err := json.Marshal(books)
 
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 
-		return ret, nil
+		return string(ret), nil
 	case "purchase":
 		isbn := args[1]
 		q, err := strconv.ParseUint(args[2], 10, 8)
 
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 		quantity := uint16(q)
 
 		c, err := strconv.ParseFloat(args[3], 32)
 
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 		cost := float32(c)
 
@@ -101,20 +100,53 @@ func (t *SmartContract) Invoke(ctx contractapi.TransactionContextInterface) ([]b
 		print("foo")
 
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 
-		_, err = json.Marshal(insts)
+		instBytes, err := json.Marshal(insts)
 
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 
 		//log.Println(fmt.Sprintf("Purchase ret: %s", string(ret)))
 
-		return nil, nil
+		return string(instBytes), nil
+	case "pay":
+		c, err := strconv.ParseFloat(args[1], 64)
+
+		if err != nil {
+			return "", err
+		}
+
+		amount := float64(c)
+
+		var ids []string
+		err = json.Unmarshal([]byte(args[2]), &ids)
+
+		if err != nil {
+			return "", err
+		}
+
+		log.Println("Paying with the ids", amount, ids)
+
+		p, err := t.PayLateFee(ctx, amount, ids)
+
+		if err != nil {
+			return "", err
+		}
+
+		log.Println("Payment", p)
+
+		paymentBytes, err := json.Marshal(p)
+
+		if err != nil {
+			return "", err
+		}
+
+		return string(paymentBytes), nil
 	default:
-		return nil, errors.New(fmt.Sprintf(`Invalid invoke "%s" function name. Expecting "invoke", "delete", "query", "respond", "mspid", or "event"`, function))
+		return "", errors.New(fmt.Sprintf(`Invalid invoke "%s" function name. Expecting "invoke", "delete", "query", "respond", "mspid", or "event"`, function))
 	}
 }
 
@@ -202,7 +234,7 @@ func (t *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface
 
 func (t *SmartContract) QueryBook(ctx contractapi.TransactionContextInterface, key string, value string) ([]*common.Book, error) {
 	queryString := fmt.Sprintf(`{"selector":{"docType":"book","%s":"%s"}}`, key, value)
-	res, err := getQueryResultForQueryString(ctx, queryString)
+	res, err := GetQueryResultForQueryString(ctx, queryString)
 
 	if err != nil {
 		return nil, err
@@ -219,7 +251,7 @@ func (t *SmartContract) QueryBook(ctx contractapi.TransactionContextInterface, k
 }
 
 func (t *SmartContract) ListBooks(ctx contractapi.TransactionContextInterface) ([]*common.Book, error) {
-	res, err := getQueryResultForQueryString(ctx, `{"selector":{"docType":"book"}}`)
+	res, err := GetQueryResultForQueryString(ctx, `{"selector":{"docType":"book"}}`)
 
 	if err != nil {
 		return nil, err
@@ -263,7 +295,7 @@ func (t *SmartContract) ListBookInstances(ctx contractapi.TransactionContextInte
 		return nil, err
 	}
 
-	res, err := getQueryResultForQueryString(ctx, string(queryString))
+	res, err := GetQueryResultForQueryString(ctx, string(queryString))
 
 	if err != nil {
 		return nil, err
@@ -342,10 +374,7 @@ func (t *SmartContract) BorrowBookInstance(ctx contractapi.TransactionContextInt
 
 	if inst.Status == common.AVAILABLE {
 		log.Println(fmt.Sprintf("Going to borrow book \"%s\"", instId))
-		clientId, _ := ctx.GetClientIdentity().GetID()
-		name, _, _ := ctx.GetClientIdentity().GetAttributeValue("Name")
-
-		inst.Borrower = common.User{clientId, name}
+		inst.Borrower = t.GetUserByClientId(ctx)
 		inst.Status = common.OUT
 
 		//inst.DueDate = time.Now().Add(t.BorrowDuration )
@@ -401,42 +430,10 @@ func (t *SmartContract) ReturnBookInstance(ctx contractapi.TransactionContextInt
 	}
 
 	if inst.Status == common.OUT {
-		now := time.Now()
+		lateFee, err := t.CheckForLateFee(ctx, inst)
 
-		// Late fee
-		if inst.DueDate.Before(now) {
-			diff := now.Sub(inst.DueDate).Round(time.Hour)
-			diffDays := math.RoundToEven(diff.Hours() / 24)
-
-			if diffDays > 0 {
-				log.Println("A late fee is owed")
-				id := ctx.GetStub().GetTxID()
-				fee := t.LateFeePerDay * diffDays
-				ts, _ := ctx.GetStub().GetTxTimestamp()
-				date := time.Unix(ts.Seconds, int64(ts.Nanos)).Round(time.Hour).UTC()
-
-				lateFee := common.LateFee{id, inst.Borrower, fee, date, false}
-				log.Println(lateFee)
-				lateFeeBytes, err := json.Marshal(lateFee)
-
-				if err != nil {
-					return common.LateFee{}, err
-				}
-
-				err = ctx.GetStub().PutState(fmt.Sprintf("lateFee.%s", id), lateFeeBytes)
-
-				if err != nil {
-					return common.LateFee{}, err
-				}
-
-				err = ctx.GetStub().SetEvent("LateFee.Created", lateFeeBytes)
-
-				if err != nil {
-					return common.LateFee{}, err
-				}
-
-				return lateFee, nil
-			}
+		if err != nil {
+			return common.LateFee{}, err
 		}
 
 		inst.Status = common.AVAILABLE
@@ -454,6 +451,8 @@ func (t *SmartContract) ReturnBookInstance(ctx contractapi.TransactionContextInt
 
 		book.Available += 1
 		t.UpdateBook(ctx, book)
+
+		return lateFee, nil
 	} else {
 		errors.New("Book cannot be returned if it is not out!")
 	}

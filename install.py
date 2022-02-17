@@ -6,8 +6,16 @@ import re
 
 
 def package():
-    os.system('peer lifecycle chaincode package {} --path {}/backend --lang golang --label {}'.format(out_file, cwd, label))
-    print('Packaged: {}'.format(get_hash()))
+    ret = os.system("cd backend && go build")
+
+    if ret == 0:
+        if os.path.exists(out_file):
+            os.remove(out_file)
+
+        os.system('peer lifecycle chaincode package {} --path {}/backend --lang golang --label {}'.format(out_file, cwd, label))
+        print('Packaged: {}'.format(get_hash()))
+    else:
+        raise(Exception("Code build error!"))
 
 
 def get_hash():
@@ -36,11 +44,11 @@ def install():
         if out.startswith('Error:'):
             print('Already installed!')
         else:
-            print('Installed')
+            print('Installed {}'.format(sequence))
 
 
 def approve(org):
-    print('Approving for {}'.format(org))
+    print('Approving for {} sequence {}'.format(org, sequence))
     set_org(org)
     print(subprocess.getoutput(
     'peer lifecycle chaincode approveformyorg ' + \
@@ -56,6 +64,7 @@ def approve(org):
 
 
 def check_commit_readiness():
+    print('Checking commit readiness for sequence {}'.format(sequence))
     out = subprocess.getoutput('peer lifecycle chaincode checkcommitreadiness ' + \
     '--channelID {} '.format(channel) + \
     '--name {} '.format(name) + \
@@ -69,8 +78,7 @@ def check_commit_readiness():
 
 
 def commit():
-    print('Committing!')
-
+    print('Committing! sequence {}'.format(sequence))
     out = subprocess.getoutput('peer lifecycle chaincode commit ' + \
     '-o {} '.format(orderer) + \
     '--ordererTLSHostnameOverride {} --tls '.format(orderer_hostname) + \
@@ -85,8 +93,7 @@ def commit():
 
 
 def get_installed():
-    out = subprocess.getoutput('peer lifecycle chaincode queryinstalled ' + \
-                               '--output json'.format(sequence))
+    out = subprocess.getoutput('peer lifecycle chaincode queryinstalled --output json')
 
     print(out)
 
@@ -95,7 +102,7 @@ def get_committed():
     out = subprocess.getoutput('peer lifecycle chaincode querycommitted ' + \
                                '--channelID {} '.format(channel) + \
                                '--name {} '.format(name) + \
-                               '--output json'.format(sequence))
+                               '--output json')
 
     print(out)
     return json.loads(out)
@@ -113,33 +120,41 @@ def invoke_init():
     print(out)
 
 
+def install_chaincode():
+    package()
+
+    for org in orgs:
+        set_org(org)
+        install()
+
+    for org in orgs:
+        org_name = 'Org{}MSP'.format(org)
+        set_org(org)
+
+        readiness = check_commit_readiness()
+        if readiness[org_name]:
+            print('Already approved!')
+            break
+        else:
+            approve(org)
+
+    # if approved == len(orgs):
+    commit()
+    # get_committed()
+
+    if sequence == 1:
+        invoke_init()
 # get_committed()
 # get_installed()
 # exit()
 
-package()
-
-for org in orgs:
-    set_org(org)
-    install()
-
-
-for org in orgs:
-    org_name = 'Org{}MSP'.format(org)
-    set_org(org)
-
-    readiness = check_commit_readiness()
-    if readiness[org_name]:
-        print('Already approved!')
-        break
-    else:
-        approve(org)
-
-# if approved == len(orgs):
-commit()
-# get_committed()
-
-invoke_init()
+# install_chaincode()
 
 # get_committed()
 # get_installed()
+# check_commit_readiness()
+# package()
+
+
+if __name__ =="__main__":
+    install_chaincode()

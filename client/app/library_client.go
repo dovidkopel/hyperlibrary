@@ -189,3 +189,44 @@ func (l *LibraryClient) ReturnBook(instId string) (common.LateFee, error) {
 
 	return lateFee, nil
 }
+
+func (l *LibraryClient) ListUsersOwingFees() ([]common.UserWithFees, error) {
+	usersBytes, err := l.contract.EvaluateTransaction("ListUsersOwingFees")
+
+	if err != nil {
+		log.Fatalf(err.Error())
+		return []common.UserWithFees{}, err
+	}
+
+	var users []common.UserWithFees
+	err = json.Unmarshal(usersBytes, &users)
+
+	if err != nil {
+		return []common.UserWithFees{}, err
+	}
+
+	return users, nil
+}
+
+func (l *LibraryClient) PayLateFee(amount float64, feeIds []string) (common.Payment, error) {
+	ids, err := json.Marshal(feeIds)
+
+	if err != nil {
+		return common.Payment{}, err
+	}
+
+	paymentBytes, err := l.contract.SubmitTransaction("Invoke", "pay", fmt.Sprintf("%f", amount), string(ids))
+
+	if err != nil {
+		return common.Payment{}, err
+	}
+
+	var payment common.Payment
+	err = json.Unmarshal(paymentBytes, &payment)
+
+	if err != nil {
+		return common.Payment{}, err
+	}
+
+	return payment, nil
+}

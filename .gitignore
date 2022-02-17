@@ -3,3 +3,7 @@
 /hyperlibrary.tar.gz
 /orderer.block/
 /keystore/
+/backend/backend
+/client/libclient
+/sequence
+.idea/
