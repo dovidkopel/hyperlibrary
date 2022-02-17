@@ -14,6 +14,7 @@ func main() {
 	}
 
 	l := app.New("libraryApp@org1.example.com")
+	//l1 := app.New("john@org1.example.com")
 	//books := l.ListBooks()
 	//for i := range books {
 	//	b := books[i]
@@ -75,21 +76,28 @@ func main() {
 	//	b := books[i]
 	//	log.Println(b)
 	//}
+	histories, _ := l.GetFeeHistory("aed2130379aa83e7102476315f3d7e58dbec65b05002f703fb957426ce6f2588")
 
-	users, err := l.ListUsersOwingFees()
-	for i := range users {
-		user := users[i]
-		log.Println("Users owing fees", user)
-
-		for k, _ := range user.FeesOwed {
-			p, err := l.PayLateFee(1.0, []string{k})
-
-			if err != nil {
-				log.Fatalf(err.Error())
-			}
-
-			log.Println("Payment", p)
-			break
-		}
+	for i := range histories {
+		history := histories[i]
+		log.Println(history)
 	}
+
+	//users, err := l.ListUsersOwingFees()
+	//for i := range users {
+	//	user := users[i]
+	//	log.Println("Users owing fees", user)
+	//
+	//	for k, _ := range user.FeesOwed {
+	//		if k == "aed2130379aa83e7102476315f3d7e58dbec65b05002f703fb957426ce6f2588" {
+	//			p, err := l.PayLateFee(1.0, []string{k})
+	//
+	//			if err != nil {
+	//				log.Fatalf(err.Error())
+	//			}
+	//
+	//			log.Println("Payment", p)
+	//		}
+	//	}
+	//}
 }

@@ -5,6 +5,11 @@ import (
 	"time"
 )
 
+type History struct {
+	Time time.Time              `json:"time"`
+	Data map[string]interface{} `json:"data"`
+}
+
 func GetApproxTime(ts *timestamp.Timestamp) time.Time {
 	return time.Unix(ts.Seconds, int64(ts.Nanos)).Round(time.Minute).UTC()
 }

@@ -230,3 +230,20 @@ func (l *LibraryClient) PayLateFee(amount float64, feeIds []string) (common.Paym
 
 	return payment, nil
 }
+
+func (l *LibraryClient) GetFeeHistory(id string) ([]common.History, error) {
+	historyBytes, err := l.contract.EvaluateTransaction("GetFeeHistory", id)
+
+	if err != nil {
+		return []common.History{}, err
+	}
+
+	var history []common.History
+	err = json.Unmarshal(historyBytes, &history)
+
+	if err != nil {
+		return []common.History{}, err
+	}
+
+	return history, nil
+}
