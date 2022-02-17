@@ -201,34 +201,5 @@ func (t *SmartContract) PayLateFee(ctx contractapi.TransactionContextInterface, 
 }
 
 func (t *SmartContract) GetFeeHistory(ctx contractapi.TransactionContextInterface, id string) ([]common.History, error) {
-	hi, err := ctx.GetStub().GetHistoryForKey(fmt.Sprintf("lateFee.%s", id))
-
-	if err != nil {
-		return []common.History{}, err
-	}
-
-	var entries []common.History
-
-	for hi.HasNext() {
-		h, err := hi.Next()
-
-		if err != nil {
-			return []common.History{}, err
-		}
-
-		date := common.GetApproxTime(h.Timestamp)
-		desc := h.GetValue()
-		log.Println(date, desc)
-
-		var data map[string]interface{}
-		err = json.Unmarshal(desc, &data)
-
-		if err != nil {
-			return []common.History{}, err
-		}
-
-		entries = append(entries, common.History{date, data})
-	}
-
-	return entries, nil
+	return t.GetHistory(ctx, fmt.Sprintf("lateFee.%s", id))
 }

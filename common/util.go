@@ -6,8 +6,9 @@ import (
 )
 
 type History struct {
-	Time time.Time              `json:"time"`
-	Data map[string]interface{} `json:"data"`
+	Time    time.Time              `json:"time"`
+	Data    map[string]interface{} `json:"data"`
+	Deleted bool                   `json:"deleted"`
 }
 
 func GetApproxTime(ts *timestamp.Timestamp) time.Time {
