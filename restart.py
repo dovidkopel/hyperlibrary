@@ -44,8 +44,9 @@ def update_sequence():
         sequence = get_sequence(False)
 
 
-if os.path.exists('client/wallet/*'):
-    os.remove('client/wallet/*')
+if os.path.exists('client/wallet'):
+    for i in os.listdir('client/wallet'):
+        os.remove('client/wallet/{}'.format(i))
 
 stop()
 start()

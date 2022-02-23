@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"log"
 	"path/filepath"
+	"strings"
 )
 
 func getConnectionConfig() core.ConfigProvider {
@@ -65,7 +66,7 @@ func populateWallet(wallet *gateway.Wallet) error {
 	return wallet.Put("appUser", identity)
 }
 
-func CreateAppUser(wallet *gateway.Wallet, id string) error {
+func CreateAppUser(wallet *gateway.Wallet, id string, roles []string) error {
 	sdk, err := fabsdk.New(getConfig())
 	print("created sdk")
 	if err != nil {
@@ -86,7 +87,7 @@ func CreateAppUser(wallet *gateway.Wallet, id string) error {
 
 	attrs = append(attrs,
 		mspclient.Attribute{"Name", id, true},
-		mspclient.Attribute{"Role", "library", true},
+		mspclient.Attribute{"Roles", strings.Join(roles, ","), true},
 	)
 
 	secret, err := mspClient.Register(&mspclient.RegistrationRequest{

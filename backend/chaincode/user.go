@@ -5,42 +5,57 @@ import (
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 	"hyperlibrary/common"
 	"log"
+	"strings"
 )
 
 func (t *SmartContract) GetUserByClientId(ctx contractapi.TransactionContextInterface) common.User {
 	clientId, _ := ctx.GetClientIdentity().GetID()
 	name, _, _ := ctx.GetClientIdentity().GetAttributeValue("Name")
-	return common.User{clientId, name}
+	roles, _, _ := ctx.GetClientIdentity().GetAttributeValue("Roles")
+
+	rs := strings.Split(roles, ",")
+	return common.User{clientId, name, rs}
+}
+
+func (t *SmartContract) HasRole(ctx contractapi.TransactionContextInterface, role string) bool {
+	user := t.GetUserByClientId(ctx)
+
+	for _, r := range user.Roles {
+		if r == role {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *SmartContract) ListUsersOwingFees(ctx contractapi.TransactionContextInterface) ([]common.UserWithFees, error) {
-	res, err := GetQueryResultForQueryString(ctx, `{"selector":{"docType":"lateFee","fullyPaid":false}}`)
+	res, err := GetQueryResultForQueryString(ctx, `{"selector":{"docType":"fee","fullyPaid":false}}`)
 	var users []common.UserWithFees
 
 	if err != nil {
 		return users, err
 	}
 
-	log.Println("Late fees", len(res))
+	log.Println("Fees", len(res))
 
 	for i := range res {
-		lateFeeBytes := res[i]
-		var lateFee common.LateFee
-		err = json.Unmarshal(lateFeeBytes, &lateFee)
+		feeBytes := res[i]
+		var fee common.Fee
+		err = json.Unmarshal(feeBytes, &fee)
 
 		if err != nil {
 			return users, err
 		}
 
-		log.Println("Late Fee", lateFee)
+		log.Println("Late Fee", fee)
 
 		found := false
 		for i := range users {
 			user := users[i]
-			if user.ClientId == lateFee.Borrower.ClientId {
+			if user.ClientId == fee.Borrower.ClientId {
 				found = true
-				am := lateFee.Fee - lateFee.AmountPaid
-				user.FeesOwed[lateFee.Id] = am
+				am := fee.Fee - fee.AmountPaid
+				user.FeesOwed[fee.Id] = am
 				user.TotalOwed += am
 				users[i] = user
 				break
@@ -48,10 +63,10 @@ func (t *SmartContract) ListUsersOwingFees(ctx contractapi.TransactionContextInt
 		}
 
 		if !found {
-			am := lateFee.Fee - lateFee.AmountPaid
-			fo := map[string]float64{lateFee.Id: am}
+			am := fee.Fee - fee.AmountPaid
+			fo := map[string]float64{fee.Id: am}
 			user := common.UserWithFees{
-				User:      lateFee.Borrower,
+				User:      fee.Borrower,
 				FeesOwed:  fo,
 				TotalOwed: am,
 			}

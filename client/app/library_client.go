@@ -9,8 +9,10 @@ import (
 	"github.com/hyperledger/fabric-sdk-go/pkg/gateway"
 	"hyperlibrary/common"
 	"log"
+	"math/rand"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 type LibraryClient struct {
@@ -31,7 +33,7 @@ func getConfig() core.ConfigProvider {
 	return config.FromFile(filepath.Clean(ccpPath))
 }
 
-func New(userId string) LibraryClient {
+func New(userId string, roles []string, handleEvents bool) LibraryClient {
 	wallet, err := gateway.NewFileSystemWallet("wallet")
 	if err != nil {
 		log.Fatalf("Failed to create wallet: %v", err)
@@ -39,7 +41,7 @@ func New(userId string) LibraryClient {
 
 	if !wallet.Exists(userId) {
 		//err = populateWallet(wallet)
-		err = CreateAppUser(wallet, userId)
+		err = CreateAppUser(wallet, userId, roles)
 		if err != nil {
 			log.Fatalf("Failed to populate wallet contents: %v", err)
 		}
@@ -68,23 +70,123 @@ func New(userId string) LibraryClient {
 	ll.network = network
 	ll.gateway = gw
 	ll.contract = network.GetContract("hyperlibrary")
-	ll.HandleEvents()
+
+	if handleEvents {
+		ll.HandleEvents()
+	}
 
 	return ll
 }
 
-func eventHandler(c <-chan *fab.FilteredBlockEvent) {
+func blockEventHandler(c <-chan *fab.FilteredBlockEvent) {
 	v := <-c
-	log.Println(v)
+
+	txs := v.FilteredBlock.GetFilteredTransactions()
+	for i := range txs {
+		tx := txs[i]
+		txa := tx.GetTransactionActions().GetChaincodeActions()
+		for ii := range txa {
+			act := txa[ii]
+			ev := act.ChaincodeEvent
+
+			var payload map[string]interface{}
+			json.Unmarshal(ev.Payload, &payload)
+			log.Println("EVENT", ev.EventName, payload)
+		}
+	}
 }
 
 func (l *LibraryClient) HandleEvents() {
-	_, _, _ = l.contract.RegisterEvent("Book.Created")
-	_, _, _ = l.contract.RegisterEvent("BookInstance.Created")
-	_, _, _ = l.contract.RegisterEvent("BookInstance.Borrowed")
-	_, _, _ = l.contract.RegisterEvent("BookInstance.Returned")
-	_, ch, _ := l.network.RegisterFilteredBlockEvent()
-	go eventHandler(ch)
+	_, ch, _ := l.contract.RegisterEvent("Events")
+	go l.eventHandler(ch)
+	//_, ch, _ := l.network.RegisterFilteredBlockEvent()
+	//go blockEventHandler(ch)
+}
+
+func (l *LibraryClient) eventHandler(c <-chan *fab.CCEvent) {
+	v := <-c
+
+	//event := v.EventName
+	payloadBytes := v.Payload
+
+	var payloads []common.Event
+	err := json.Unmarshal(payloadBytes, &payloads)
+
+	if err != nil {
+		log.Fatalf(err.Error())
+	}
+
+	for _, event := range payloads {
+		pb, err := json.Marshal(event.Payload)
+
+		if err != nil {
+			log.Fatalf(err.Error())
+		}
+
+		if event.Name == "BookInstance.Created" {
+			var inst common.BookInstance
+			err = json.Unmarshal(pb, &inst)
+
+			if err != nil {
+				log.Fatalf(err.Error())
+			}
+
+			log.Println("EVENT", event.Name, inst)
+		} else if event.Name == "BookInstance.Returned" {
+			var inst common.BookInstance
+			err = json.Unmarshal(pb, &inst)
+
+			if err != nil {
+				log.Fatalf(err.Error())
+			}
+
+			log.Println("EVENT", event.Name, inst)
+			l.bookReturned(inst)
+		} else {
+			log.Println("EVENT", event.Name, event.Payload)
+		}
+	}
+	go l.eventHandler(c)
+}
+
+func (l *LibraryClient) bookReturned(inst common.BookInstance) {
+
+	r := rand.Intn(100)
+
+	var cond common.Condition
+	var fee float64 = 0
+	available := true
+	// Good
+
+	if r > 50 {
+		cond = common.GOOD
+	} else if r > 40 {
+		cond = common.WORN
+	} else if r > 30 {
+		cond = common.RIPPED
+		fee = .50
+	} else if r > 20 {
+		cond = common.PAGES_MISSING
+		fee = 1.0
+	} else {
+		cond = common.REQUIRES_REPLACEMENT
+		fee = float64(inst.Cost)
+		available = false
+	}
+
+	log.Println(fmt.Sprintf("Inspecting book with %s, %f", cond, fee))
+	_, err := l.contract.SubmitTransaction("Invoke", "inspect", inst.Id, string(cond), fmt.Sprintf("%f", fee), strconv.FormatBool(available))
+
+	if err != nil {
+		log.Fatalf(err.Error())
+	}
+
+	if fee > 0 {
+		log.Println(fee)
+	}
+
+	inst, _ = l.GetBookInstance(inst.Id)
+	log.Println("inst", inst)
 }
 
 func (l *LibraryClient) ListBooks() []common.Book {
@@ -173,18 +275,18 @@ func (l *LibraryClient) BorrowBook(bookId string) error {
 	return nil
 }
 
-func (l *LibraryClient) ReturnBook(instId string) (common.LateFee, error) {
+func (l *LibraryClient) ReturnBook(instId string) (common.Fee, error) {
 	lateFeeBytes, err := l.contract.SubmitTransaction("ReturnBookInstance", instId)
 
 	if err != nil {
-		return common.LateFee{}, err
+		return common.Fee{}, err
 	}
 
-	var lateFee common.LateFee
+	var lateFee common.Fee
 	err = json.Unmarshal(lateFeeBytes, &lateFee)
 
 	if err != nil {
-		return common.LateFee{}, err
+		return common.Fee{}, err
 	}
 
 	return lateFee, nil
@@ -231,19 +333,36 @@ func (l *LibraryClient) PayLateFee(amount float64, feeIds []string) (common.Paym
 	return payment, nil
 }
 
-func (l *LibraryClient) GetFeeHistory(id string) ([]common.History, error) {
+func (l *LibraryClient) GetFeeHistory(id string) ([]*common.History, error) {
 	historyBytes, err := l.contract.EvaluateTransaction("GetFeeHistory", id)
 
 	if err != nil {
-		return []common.History{}, err
+		return nil, err
 	}
 
-	var history []common.History
+	var history []*common.History
 	err = json.Unmarshal(historyBytes, &history)
 
 	if err != nil {
-		return []common.History{}, err
+		return nil, err
 	}
 
 	return history, nil
+}
+
+func (l *LibraryClient) InspectReturnedBook(instId string, cond common.Condition, feeAmount float64, available bool) (*common.Fee, error) {
+	feeBytes, err := l.contract.SubmitTransaction("InspectReturnedBook", instId, string(cond), fmt.Sprintf("%f", feeAmount), fmt.Sprintf("%d", available))
+
+	if err != nil {
+		return nil, err
+	}
+
+	var fee *common.Fee
+	err = json.Unmarshal(feeBytes, &fee)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return fee, nil
 }

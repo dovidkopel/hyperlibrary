@@ -5,6 +5,12 @@ import (
 	"time"
 )
 
+type Event struct {
+	Name    string                 `json:"name"`
+	Payload map[string]interface{} `json:"payload"`
+	Time    time.Time              `json:"time"`
+}
+
 type History struct {
 	Time    time.Time              `json:"time"`
 	Data    map[string]interface{} `json:"data"`

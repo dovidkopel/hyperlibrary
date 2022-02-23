@@ -44,11 +44,11 @@ def install():
         if out.startswith('Error:'):
             print('Already installed!')
         else:
-            print('Installed {}'.format(sequence))
+            print('Installed {}'.format(get_sequence()))
 
 
 def approve(org):
-    print('Approving for {} sequence {}'.format(org, sequence))
+    print('Approving for {} sequence {}'.format(org, get_sequence()))
     set_org(org)
     print(subprocess.getoutput(
     'peer lifecycle chaincode approveformyorg ' + \
@@ -59,17 +59,17 @@ def approve(org):
     '--name {} '.format(name) + \
     '--version {} '.format(version) + \
     '--package-id {}:{} '.format(label, get_hash()) + \
-    '--sequence {} '.format(sequence) + \
+    '--sequence {} '.format(get_sequence()) + \
     '--init-required'))
 
 
 def check_commit_readiness():
-    print('Checking commit readiness for sequence {}'.format(sequence))
+    print('Checking commit readiness for sequence {}'.format(get_sequence()))
     out = subprocess.getoutput('peer lifecycle chaincode checkcommitreadiness ' + \
     '--channelID {} '.format(channel) + \
     '--name {} '.format(name) + \
     '--version {} '.format(version) + \
-    '--sequence {} --init-required --output json'.format(sequence))
+    '--sequence {} --init-required --output json'.format(get_sequence()))
     print(out)
     if 'Error' not in out:
         approvals = json.loads(out)
@@ -78,7 +78,7 @@ def check_commit_readiness():
 
 
 def commit():
-    print('Committing! sequence {}'.format(sequence))
+    print('Committing! sequence {}'.format(get_sequence()))
     out = subprocess.getoutput('peer lifecycle chaincode commit ' + \
     '-o {} '.format(orderer) + \
     '--ordererTLSHostnameOverride {} --tls '.format(orderer_hostname) + \
@@ -87,7 +87,7 @@ def commit():
     '--name {} '.format(name) + \
     get_peers() + \
     '--version {} '.format(version) + \
-    '--sequence {} --init-required'.format(sequence))
+    '--sequence {} --init-required'.format(get_sequence()))
     print(out)
     get_sequence(True)
 
@@ -121,6 +121,7 @@ def invoke_init():
 
 
 def install_chaincode():
+    seq = get_sequence()
     package()
 
     for org in orgs:
@@ -142,7 +143,7 @@ def install_chaincode():
     commit()
     # get_committed()
 
-    if sequence == 1:
+    if seq == 1:
         invoke_init()
 # get_committed()
 # get_installed()
@@ -154,6 +155,7 @@ def install_chaincode():
 # get_installed()
 # check_commit_readiness()
 # package()
+# invoke_init()
 
 
 if __name__ =="__main__":

@@ -10,24 +10,24 @@ import (
 	"time"
 )
 
-func (t *SmartContract) GetLateFees(ctx contractapi.TransactionContextInterface, clientId string) ([]*common.LateFee, error) {
-	res, err := GetQueryResultForQueryString(ctx, fmt.Sprintf(`{"selector":{"docType":"lateFee", "borrower.clientId": "%s"}}`, clientId))
+func (t *SmartContract) GetFees(ctx contractapi.TransactionContextInterface, clientId string) ([]*common.Fee, error) {
+	res, err := GetQueryResultForQueryString(ctx, fmt.Sprintf(`{"selector":{"docType":"fee", "borrower.clientId": "%s"}}`, clientId))
 
 	if err != nil {
 		return nil, err
 	}
 
-	var lateFees []*common.LateFee
+	var fees []*common.Fee
 	for i := range res {
-		lateFeeBytes := res[i]
-		var lateFee common.LateFee
-		err = json.Unmarshal(lateFeeBytes, &lateFee)
-		lateFees = append(lateFees, &lateFee)
+		feeBytes := res[i]
+		var fee common.Fee
+		err = json.Unmarshal(feeBytes, &fee)
+		fees = append(fees, &fee)
 	}
-	return lateFees, nil
+	return fees, nil
 }
 
-func (t *SmartContract) CheckForLateFee(ctx contractapi.TransactionContextInterface, inst common.BookInstance) (common.LateFee, error) {
+func (t *SmartContract) checkForLateFee(ctx contractapi.TransactionContextInterface, inst *common.BookInstance) (*common.Fee, error) {
 	now := time.Now()
 
 	if inst.DueDate.Before(now) {
@@ -35,67 +35,76 @@ func (t *SmartContract) CheckForLateFee(ctx contractapi.TransactionContextInterf
 		diffDays := math.RoundToEven(diff.Hours() / 24)
 
 		if diffDays > 0 {
-			log.Println("A late fee is owed")
 			id := ctx.GetStub().GetTxID()
 			fee := t.LateFeePerDay * diffDays
+			log.Println("A late fee is owed", t.LateFeePerDay, diffDays, fee)
 			ts, _ := ctx.GetStub().GetTxTimestamp()
 			date := common.GetApproxTime(ts)
 
-			lateFee := common.LateFee{"lateFee", id, inst.Borrower, fee, date, 0.0, false}
+			if fee > 0 {
+				var amt float64 = fee
+				if fee > float64(inst.Cost) {
+					log.Println("Fee would cost more than the price of the book!")
+					amt = float64(inst.Cost)
+				}
 
-			lateFeeBytes, err := t.StoreFee(ctx, lateFee)
+				lateFee := common.Fee{"fee", id, inst.Borrower, amt, common.LATE_FEE, date, 0.0, false}
 
-			if err != nil {
-				return common.LateFee{}, err
+				_, err := t.storeFee(ctx, &lateFee)
+
+				if err != nil {
+					return &common.Fee{}, err
+				}
+
+				//err = ctx.GetStub().SetEvent("LateFee.Created", lateFeeBytes)
+				t.AddEvent(ctx, "Fee.Created", lateFee)
+
+				if err != nil {
+					return &common.Fee{}, err
+				}
+
+				return &lateFee, nil
 			}
-
-			err = ctx.GetStub().SetEvent("LateFee.Created", lateFeeBytes)
-
-			if err != nil {
-				return common.LateFee{}, err
-			}
-
-			return lateFee, nil
 		}
 	}
 
-	return common.LateFee{}, nil
+	return nil, nil
 }
 
-func (t *SmartContract) GetFee(ctx contractapi.TransactionContextInterface, feeId string) (common.LateFee, error) {
-	feeBytes, err := ctx.GetStub().GetState(fmt.Sprintf("lateFee.%s", feeId))
+func (t *SmartContract) GetFee(ctx contractapi.TransactionContextInterface, feeId string) (*common.Fee, error) {
+	feeBytes, err := ctx.GetStub().GetState(fmt.Sprintf("fee.%s", feeId))
 
 	if err != nil {
-		return common.LateFee{}, err
+		return nil, err
 	}
 
-	var fee common.LateFee
+	var fee *common.Fee
 	err = json.Unmarshal(feeBytes, &fee)
 
 	if err != nil {
-		return common.LateFee{}, err
+		return nil, err
 	}
 
 	return fee, nil
 }
 
-func (t *SmartContract) StoreFee(ctx contractapi.TransactionContextInterface, fee common.LateFee) ([]byte, error) {
-	lateFeeBytes, err := json.Marshal(fee)
+func (t *SmartContract) storeFee(ctx contractapi.TransactionContextInterface, fee *common.Fee) ([]byte, error) {
+	feeBytes, err := json.Marshal(fee)
 
 	if err != nil {
 		return nil, err
 	}
 
-	err = ctx.GetStub().PutState(fmt.Sprintf("lateFee.%s", fee.Id), lateFeeBytes)
+	err = ctx.GetStub().PutState(fmt.Sprintf("fee.%s", fee.Id), feeBytes)
 
 	if err != nil {
 		return nil, err
 	}
 
-	return lateFeeBytes, nil
+	return feeBytes, nil
 }
 
-func (t *SmartContract) DistributePayment(ctx contractapi.TransactionContextInterface, amount float64, feeIds []string) (map[string]float64, error) {
+func (t *SmartContract) distributePayment(ctx contractapi.TransactionContextInterface, amount float64, feeIds []string) (map[string]float64, error) {
 	remainingAmount := amount
 	fees := make(map[string]float64, len(feeIds))
 
@@ -133,13 +142,14 @@ func (t *SmartContract) DistributePayment(ctx contractapi.TransactionContextInte
 				feeEvent = "LateFee.PartiallyPaid"
 			}
 
-			feeBytes, err := t.StoreFee(ctx, fee)
+			_, err := t.storeFee(ctx, fee)
 
 			if err != nil {
 				return map[string]float64{}, err
 			}
 
-			ctx.GetStub().SetEvent(feeEvent, feeBytes)
+			//ctx.GetStub().SetEvent(feeEvent, feeBytes)
+			t.AddEvent(ctx, feeEvent, fee)
 		} else {
 			fees[feeId] = 0
 			log.Println("For the fee there isn't enough money left in the payment.", fee)
@@ -149,38 +159,39 @@ func (t *SmartContract) DistributePayment(ctx contractapi.TransactionContextInte
 	return fees, nil
 }
 
-func (t *SmartContract) StorePayment(ctx contractapi.TransactionContextInterface, payment common.Payment) (common.Payment, error) {
+func (t *SmartContract) storePayment(ctx contractapi.TransactionContextInterface, payment *common.Payment) (*common.Payment, error) {
 	paymentBytes, err := json.Marshal(payment)
 
 	if err != nil {
 		log.Fatalf(err.Error())
-		return common.Payment{}, err
+		return nil, err
 	}
 
 	err = ctx.GetStub().PutState(fmt.Sprintf("payment.%s", payment.Id), paymentBytes)
 
 	if err != nil {
 		log.Fatalf(err.Error())
-		return common.Payment{}, err
+		return nil, err
 	}
 
-	err = ctx.GetStub().SetEvent("Payment.Created", paymentBytes)
+	//err = ctx.GetStub().SetEvent("Payment.Created", paymentBytes)
+	t.AddEvent(ctx, "Payment.Created", payment)
 
 	if err != nil {
 		log.Fatalf(err.Error())
-		return common.Payment{}, err
+		return nil, err
 	}
 
 	return payment, nil
 }
 
-func (t *SmartContract) PayLateFee(ctx contractapi.TransactionContextInterface, amount float64, feeIds []string) (common.Payment, error) {
-	feesPaid, err := t.DistributePayment(ctx, amount, feeIds)
+func (t *SmartContract) PayFee(ctx contractapi.TransactionContextInterface, amount float64, feeIds []string) (*common.Payment, error) {
+	feesPaid, err := t.distributePayment(ctx, amount, feeIds)
 
 	log.Println("Fees to be paid", feesPaid)
 
 	if err != nil {
-		return common.Payment{}, err
+		return nil, err
 	}
 
 	if len(feesPaid) > 0 {
@@ -194,12 +205,14 @@ func (t *SmartContract) PayLateFee(ctx contractapi.TransactionContextInterface, 
 
 		log.Println("Creating payment", payment)
 
-		return t.StorePayment(ctx, payment)
+		p, err := t.storePayment(ctx, &payment)
+		t.SetEvents(ctx)
+		return p, err
 	}
 
-	return common.Payment{}, nil
+	return nil, nil
 }
 
 func (t *SmartContract) GetFeeHistory(ctx contractapi.TransactionContextInterface, id string) ([]common.History, error) {
-	return t.GetHistory(ctx, fmt.Sprintf("lateFee.%s", id))
+	return t.GetHistory(ctx, fmt.Sprintf("fee.%s", id))
 }

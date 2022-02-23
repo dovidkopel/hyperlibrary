@@ -1,6 +1,8 @@
 package common
 
-import "time"
+import (
+	"time"
+)
 
 type Genre string
 type Condition string
@@ -13,11 +15,12 @@ const (
 )
 
 const (
-	NEW           Condition = "NEW"
-	GOOD                    = "GOOD"
-	WORN                    = "WORN"
-	RIPPED                  = "RIPPED"
-	PAGES_MISSING           = "PAGES_MISSING"
+	NEW                  Condition = "NEW"
+	GOOD                           = "GOOD"
+	WORN                           = "WORN"
+	RIPPED                         = "RIPPED"
+	PAGES_MISSING                  = "PAGES_MISSING"
+	REQUIRES_REPLACEMENT           = "REQUIRES_REPLACEMENT"
 )
 
 const (
@@ -40,10 +43,10 @@ type Book struct {
 }
 
 type BookInstance struct {
-	DocType string `json:"docType" default:"bookInstance"`
-	Id      string `json:"id"`
-	BookId  string `json:"bookId"`
-	//Purchased *timestamp.Timestamp `json:"purchased"
+	DocType   string    `json:"docType" default:"bookInstance"`
+	Id        string    `json:"id"`
+	BookId    string    `json:"bookId"`
+	Purchased time.Time `json:"purchased"`
 	Cost      float32   `json:"cost"`
 	Status    Status    `json:"status"`
 	Condition Condition `json:"condition"`

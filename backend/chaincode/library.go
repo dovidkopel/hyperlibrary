@@ -7,8 +7,6 @@ import (
 	"github.com/hyperledger/fabric-contract-api-go/contractapi"
 	"hyperlibrary/common"
 	"log"
-	"os"
-	"strconv"
 	"time"
 )
 
@@ -16,12 +14,15 @@ type SmartContract struct {
 	contractapi.Contract
 	BorrowDuration time.Duration
 	LateFeePerDay  float64
+	Events         []common.Event
+	MaxBooksOut    uint8
 }
 
 func NewSmartContract(contract contractapi.Contract) *SmartContract {
 	s := &SmartContract{Contract: contract}
 	s.LateFeePerDay = .50
-	bd, _ := time.ParseDuration(fmt.Sprintf("%dh", 14*24))
+	s.MaxBooksOut = 2
+	bd, _ := time.ParseDuration(fmt.Sprintf("-%dh", 14*24))
 	s.BorrowDuration = bd
 	return s
 }
@@ -29,128 +30,56 @@ func NewSmartContract(contract contractapi.Contract) *SmartContract {
 func (t *SmartContract) Init(ctx contractapi.TransactionContextInterface) error {
 	log.Println("Init invoked")
 
-	t.CreateBook(ctx, common.Book{"book", "abcd1234", "Charles Dickens", "A Tale of Two Cities", common.FICTION, 0, 0, 0})
-	t.CreateBook(ctx, common.Book{"book", "abcd45454", "William Shakespeare", "Romeo and Juliet", common.FICTION, 0, 0, 0})
-	t.CreateBook(ctx, common.Book{"book", "abcd45455", "William Shakespeare", "Julis Casar", common.FICTION, 0, 0, 0})
+	t.CreateBook(ctx, &common.Book{"book", "abcd1234", "Charles Dickens", "A Tale of Two Cities", common.FICTION, 0, 0, 0})
+	t.CreateBook(ctx, &common.Book{"book", "abcd45454", "William Shakespeare", "Romeo and Juliet", common.FICTION, 0, 0, 0})
+	t.CreateBook(ctx, &common.Book{"book", "abcd45455", "William Shakespeare", "Julis Casar", common.FICTION, 0, 0, 0})
 	return nil
 }
 
-func (t *SmartContract) Invoke(ctx contractapi.TransactionContextInterface) (string, error) {
-	log.Println("ex02 Invoke")
-	if os.Getenv("DEVMODE_ENABLED") != "" {
-		log.Println("invoking in devmode")
+func (t *SmartContract) AddEvent(ctx contractapi.TransactionContextInterface, name string, payload interface{}) {
+	ts, _ := ctx.GetStub().GetTxTimestamp()
+	var myMap map[string]interface{}
+	data, _ := json.Marshal(payload)
+	json.Unmarshal(data, &myMap)
+	t.Events = append(t.Events, common.Event{name, myMap, common.GetApproxTime(ts)})
+}
+
+func (t *SmartContract) SetEvents(ctx contractapi.TransactionContextInterface) {
+	for i := range t.Events {
+		event := t.Events[i]
+		log.Println("Event", event)
 	}
-	function, args := ctx.GetStub().GetFunctionAndParameters()
-	name, _, _ := ctx.GetClientIdentity().GetAttributeValue("Name")
-	clientId, _ := ctx.GetClientIdentity().GetID()
-	log.Println(fmt.Sprintf("Client id: %s %s", clientId, name))
 
-	switch args[0] {
-	case "create":
-		var book common.Book
-		err := json.Unmarshal([]byte(args[1]), &book)
+	if len(t.Events) > 0 {
+		eventBytes, err := json.Marshal(t.Events)
 
 		if err != nil {
-			return "", err
+			log.Fatalf(err.Error())
 		}
 
-		book.DocType = "book"
-		book.Owned = 0
-		book.Available = 0
-
-		err = t.CreateBook(ctx, book)
+		err = ctx.GetStub().SetEvent("Events", eventBytes)
 
 		if err != nil {
-			return "", err
+			log.Fatal(err.Error())
 		}
 
-		return "", nil
-	case "list":
-		// Deletes an entity from its state
-		books, err := t.ListBooks(ctx)
-
-		if err != nil {
-			return "", err
-		}
-
-		ret, err := json.Marshal(books)
-
-		if err != nil {
-			return "", err
-		}
-
-		return string(ret), nil
-	case "purchase":
-		isbn := args[1]
-		q, err := strconv.ParseUint(args[2], 10, 8)
-
-		if err != nil {
-			return "", err
-		}
-		quantity := uint16(q)
-
-		c, err := strconv.ParseFloat(args[3], 32)
-
-		if err != nil {
-			return "", err
-		}
-		cost := float32(c)
-
-		insts, err := t.PurchaseBook(ctx, isbn, quantity, cost)
-		print("foo")
-
-		if err != nil {
-			return "", err
-		}
-
-		instBytes, err := json.Marshal(insts)
-
-		if err != nil {
-			return "", err
-		}
-
-		//log.Println(fmt.Sprintf("Purchase ret: %s", string(ret)))
-
-		return string(instBytes), nil
-	case "pay":
-		c, err := strconv.ParseFloat(args[1], 64)
-
-		if err != nil {
-			return "", err
-		}
-
-		amount := float64(c)
-
-		var ids []string
-		err = json.Unmarshal([]byte(args[2]), &ids)
-
-		if err != nil {
-			return "", err
-		}
-
-		log.Println("Paying with the ids", amount, ids)
-
-		p, err := t.PayLateFee(ctx, amount, ids)
-
-		if err != nil {
-			return "", err
-		}
-
-		log.Println("Payment", p)
-
-		paymentBytes, err := json.Marshal(p)
-
-		if err != nil {
-			return "", err
-		}
-
-		return string(paymentBytes), nil
-	default:
-		return "", errors.New(fmt.Sprintf(`Invalid invoke "%s" function name. Expecting "invoke", "delete", "query", "respond", "mspid", or "event"`, function))
+		t.Events = make([]common.Event, 0)
 	}
 }
 
-func (t *SmartContract) CreateBook(ctx contractapi.TransactionContextInterface, book common.Book) error {
+func (t *SmartContract) Before(ctx contractapi.TransactionContextInterface, value interface{}) {
+	log.Println("BEFORE", ctx.GetStub().GetTxID())
+}
+
+func (t *SmartContract) After(ctx contractapi.TransactionContextInterface, value interface{}) {
+	log.Println("AFTER", ctx.GetStub().GetTxID())
+}
+
+func (t *SmartContract) CreateBook(ctx contractapi.TransactionContextInterface, book *common.Book) error {
+	if !t.HasRole(ctx, "LIBRARIAN") {
+		return errors.New("Access Denied!")
+	}
+
 	assetBytes, err := json.Marshal(book)
 	if err != nil {
 		return err
@@ -162,11 +91,17 @@ func (t *SmartContract) CreateBook(ctx contractapi.TransactionContextInterface, 
 		return errors.New(fmt.Sprintf(`A book with the "%s" ISBN already exists!`, book.Isbn))
 	}
 
-	ctx.GetStub().SetEvent("Book.Created", assetBytes)
+	//ctx.GetStub().SetEvent("Book.Created", assetBytes)
+	t.AddEvent(ctx, "Book.Created", book)
+	t.SetEvents(ctx)
 	return ctx.GetStub().PutState("book."+book.Isbn, assetBytes)
 }
 
 func (t *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface, bookId string, quantity uint16, cost float32) ([]*common.BookInstance, error) {
+	if !t.HasRole(ctx, "LIBRARIAN") {
+		return nil, errors.New("Access Denied!")
+	}
+
 	if quantity < 1 {
 		return nil, errors.New("Quantity must be at least 1!")
 	}
@@ -191,12 +126,15 @@ func (t *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface
 	starting_id := book.MaxId + 1
 	var last_id uint16
 
-	for i = 0; i <= quantity; i++ {
+	ts, _ := ctx.GetStub().GetTxTimestamp()
+	now := common.GetApproxTime(ts)
+
+	for i = 0; i < quantity; i++ {
 		instId := fmt.Sprintf("%s-%d", book.Isbn, starting_id+i)
 		last_id = starting_id + i
 
-		inst := common.BookInstance{"bookInstance", instId, bookId, cost,
-			common.AVAILABLE, common.NEW, time.Time{}, common.User{}}
+		inst := common.BookInstance{"bookInstance", instId, bookId, now, cost,
+			common.AVAILABLE, common.NEW, time.Time{}, common.MakeEmptyUser()}
 		instBytes, err := json.Marshal(inst)
 
 		if err != nil {
@@ -205,7 +143,8 @@ func (t *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface
 		}
 
 		err = ctx.GetStub().PutState("bookInstance."+instId, instBytes)
-		ctx.GetStub().SetEvent("BookInstance.Created", instBytes)
+		//ctx.GetStub().SetEvent("BookInstance.Created", instBytes)
+		t.AddEvent(ctx, "BookInstance.Created", inst)
 
 		if err != nil {
 			log.Println("Unable to store instance state!")
@@ -226,10 +165,10 @@ func (t *SmartContract) PurchaseBook(ctx contractapi.TransactionContextInterface
 	}
 
 	err = ctx.GetStub().PutState("book."+bookId, assetBytes)
+	t.SetEvents(ctx)
 
 	log.Println(fmt.Sprintf("Created %d instances", quantity))
-	//return instances, nil
-	return nil, nil
+	return instances, nil
 }
 
 func (t *SmartContract) QueryBook(ctx contractapi.TransactionContextInterface, key string, value string) ([]*common.Book, error) {
@@ -306,6 +245,11 @@ func (t *SmartContract) ListBookInstances(ctx contractapi.TransactionContextInte
 		bookBytes := res[i]
 		var book common.BookInstance
 		err = json.Unmarshal(bookBytes, &book)
+
+		if err != nil {
+			return nil, err
+		}
+
 		books = append(books, &book)
 	}
 	return books, nil
@@ -345,7 +289,7 @@ func (t *SmartContract) GetBookInstance(ctx contractapi.TransactionContextInterf
 	return &bookInstance, nil
 }
 
-func (t *SmartContract) UpdateBook(ctx contractapi.TransactionContextInterface, book *common.Book) error {
+func (t *SmartContract) updateBook(ctx contractapi.TransactionContextInterface, book *common.Book) error {
 	bookBytes, err := json.Marshal(book)
 
 	if err != nil {
@@ -356,15 +300,58 @@ func (t *SmartContract) UpdateBook(ctx contractapi.TransactionContextInterface, 
 	return nil
 }
 
-func (t *SmartContract) BorrowBookInstance(ctx contractapi.TransactionContextInterface, instId string) error {
-	instBytes, err := ctx.GetStub().GetState(fmt.Sprintf("bookInstance.%s", instId))
+func (t *SmartContract) updateBookInstance(ctx contractapi.TransactionContextInterface, inst *common.BookInstance) error {
+	instBytes, err := json.Marshal(inst)
 
 	if err != nil {
 		return err
 	}
 
-	var inst common.BookInstance
-	err = json.Unmarshal(instBytes, &inst)
+	ctx.GetStub().PutState(fmt.Sprintf("bookInstance.%s", inst.Id), instBytes)
+	return nil
+}
+
+func (t *SmartContract) GetMyBooksOut(ctx contractapi.TransactionContextInterface) ([]*common.BookInstance, error) {
+	user := t.GetUserByClientId(ctx)
+	queryString := fmt.Sprintf(`{"selector":{"docType":"bookInstance","Borrower.ClientId":"%s"}}`, user.ClientId)
+	res, err := GetQueryResultForQueryString(ctx, queryString)
+
+	if err != nil {
+		return nil, err
+	}
+
+	var books []*common.BookInstance
+
+	for _, b := range res {
+		var book *common.BookInstance
+		err := json.Unmarshal(b, &book)
+
+		if err != nil {
+			return nil, err
+		}
+
+		books = append(books, book)
+	}
+
+	return books, nil
+}
+
+func (t *SmartContract) MaxBooksOutCheck(ctx contractapi.TransactionContextInterface) error {
+	books, err := t.GetMyBooksOut(ctx)
+
+	if err != nil {
+		return err
+	}
+
+	if uint8(len(books)) >= t.MaxBooksOut {
+		return errors.New("You have the maximum number of books out!")
+	}
+
+	return nil
+}
+
+func (t *SmartContract) BorrowBookInstance(ctx contractapi.TransactionContextInterface, instId string) error {
+	inst, err := t.GetBookInstance(ctx, instId)
 
 	if err != nil {
 		return err
@@ -377,9 +364,7 @@ func (t *SmartContract) BorrowBookInstance(ctx contractapi.TransactionContextInt
 		inst.Borrower = t.GetUserByClientId(ctx)
 		inst.Status = common.OUT
 
-		//inst.DueDate = time.Now().Add(t.BorrowDuration )
-		dd, _ := time.ParseDuration(fmt.Sprintf("-%dh", 5*24))
-		inst.DueDate = time.Now().Add(dd).Round(time.Hour)
+		inst.DueDate = time.Now().Add(t.BorrowDuration).Round(time.Hour)
 		instBytes1, err := json.Marshal(&inst)
 
 		if err != nil {
@@ -393,69 +378,149 @@ func (t *SmartContract) BorrowBookInstance(ctx contractapi.TransactionContextInt
 		}
 
 		book.Available -= 1
-		err = t.UpdateBook(ctx, book)
+		err = t.updateBook(ctx, book)
 
 		if err != nil {
 			return err
 		}
 
-		ctx.GetStub().SetEvent("BookInstance.Borrowed", instBytes1)
+		//ctx.GetStub().SetEvent("BookInstance.Borrowed", instBytes1)
+		t.AddEvent(ctx, "BookInstance.Borrowed", inst)
 
 		return nil
 	} else if inst.Status == common.OUT {
 		return errors.New("This book is already out!")
 	}
 
+	t.SetEvents(ctx)
 	return nil
 }
 
-func (t *SmartContract) ReturnBookInstance(ctx contractapi.TransactionContextInterface, instId string) (common.LateFee, error) {
-	instBytes, err := ctx.GetStub().GetState(fmt.Sprintf("bookInstance.%s", instId))
-
-	if err != nil {
-		return common.LateFee{}, err
+func (t *SmartContract) InspectReturnedBook(ctx contractapi.TransactionContextInterface, instId string, cond common.Condition,
+	feeAmount float64, available bool) (*common.Fee, error) {
+	if !t.HasRole(ctx, "LIBRARIAN") {
+		return nil, errors.New("Access Denied!")
 	}
 
-	var inst common.BookInstance
-	err = json.Unmarshal(instBytes, &inst)
+	inst, err := t.GetBookInstance(ctx, instId)
 
 	if err != nil {
-		return common.LateFee{}, err
+		return nil, err
 	}
 
-	book, err := t.GetBook(ctx, inst.BookId)
+	var fee common.Fee
+	if feeAmount > 0 {
+		ts, _ := ctx.GetStub().GetTxTimestamp()
+		date := common.GetApproxTime(ts)
+
+		fee = common.Fee{"fee", ctx.GetStub().GetTxID(), t.GetUserByClientId(ctx),
+			feeAmount, common.DAMAGE_FEE, date, 0, false}
+
+		t.storeFee(ctx, &fee)
+		t.AddEvent(ctx, "Fee.Created", fee)
+	}
+
+	inst.Condition = cond
+
+	if available {
+		inst.Status = common.AVAILABLE
+
+		book, err := t.GetBook(ctx, inst.BookId)
+
+		if err != nil {
+			return nil, err
+		}
+
+		book.Available += 1
+		err = t.updateBook(ctx, book)
+
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	err = t.updateBookInstance(ctx, inst)
 
 	if err != nil {
-		return common.LateFee{}, err
+		return nil, err
+	}
+
+	if &fee != nil {
+		return &fee, nil
+	}
+
+	return nil, nil
+}
+
+func (t *SmartContract) LostBook(ctx contractapi.TransactionContextInterface, instId string) (*common.Fee, error) {
+	inst, err := t.GetBookInstance(ctx, instId)
+
+	if err != nil {
+		return nil, err
+	}
+
+	inst.Status = common.LOST
+	err = t.updateBookInstance(ctx, inst)
+
+	if err != nil {
+		return nil, err
+	}
+
+	ts, _ := ctx.GetStub().GetTxTimestamp()
+	date := common.GetApproxTime(ts)
+
+	fee := common.Fee{"fee", ctx.GetStub().GetTxID(), t.GetUserByClientId(ctx),
+		float64(inst.Cost), common.LOST_FEE, date, 0, false}
+
+	_, err = t.storeFee(ctx, &fee)
+	t.AddEvent(ctx, "Fee.Created", fee)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &fee, nil
+}
+
+func (t *SmartContract) ReturnBookInstance(ctx contractapi.TransactionContextInterface, instId string) (*common.Fee, error) {
+	inst, err := t.GetBookInstance(ctx, instId)
+
+	if err != nil {
+		return nil, err
 	}
 
 	if inst.Status == common.OUT {
-		lateFee, err := t.CheckForLateFee(ctx, inst)
+		lateFee, err := t.checkForLateFee(ctx, inst)
 
 		if err != nil {
-			return common.LateFee{}, err
+			return nil, err
 		}
 
-		inst.Status = common.AVAILABLE
+		inst.Status = common.RETURNED
 		inst.DueDate = time.Time{}
-		inst.Borrower = common.User{}
+		inst.Borrower = common.MakeEmptyUser()
 
-		instBytes, err = json.Marshal(inst)
+		instBytes, err := json.Marshal(inst)
 
 		if err != nil {
-			return common.LateFee{}, err
+			return nil, err
 		}
 
 		ctx.GetStub().PutState(fmt.Sprintf("bookInstance.%s", instId), instBytes)
-		ctx.GetStub().SetEvent("BookInstance.Returned", instBytes)
+		//ctx.GetStub().SetEvent("BookInstance.Returned", instBytes)
+		t.AddEvent(ctx, "BookInstance.Returned", inst)
 
-		book.Available += 1
-		t.UpdateBook(ctx, book)
+		t.SetEvents(ctx)
 
-		return lateFee, nil
+		if lateFee != nil {
+			return lateFee, nil
+		} else {
+			return nil, nil
+		}
+
 	} else {
 		errors.New("Book cannot be returned if it is not out!")
 	}
 
-	return common.LateFee{}, err
+	return nil, err
 }
