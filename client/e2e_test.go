@@ -56,6 +56,10 @@ func Test1(t *testing.T) {
 	err := librarian.CreateBook(&book1)
 	assert.Equal(t, err, nil)
 
+	// Member doesn't have permission to create
+	err = member.CreateBook(&book1)
+	assert2.True(t, err != nil)
+
 	err = librarian.CreateBook(&book2)
 	assert.Equal(t, err, nil)
 
@@ -65,6 +69,10 @@ func Test1(t *testing.T) {
 	insts, err := librarian.PurchaseBook(book1.Isbn, 10, 5.50)
 	assert.Equal(t, err, nil)
 	assert.Equal(t, len(insts), 10)
+
+	// Member doesn't have permission to purchase
+	_, err = member.PurchaseBook(book1.Isbn, 10, 5.50)
+	assert2.True(t, err != nil)
 
 	// Check instances
 	for _, inst := range insts {
@@ -76,7 +84,7 @@ func Test1(t *testing.T) {
 	}
 
 	// Make sure the counts match
-	insts1 := member.ListBooksInstances(book1.Isbn, []common.Status{common.AVAILABLE})
+	insts1, err := member.ListBooksInstances(book1.Isbn, []common.Status{common.AVAILABLE})
 	assert.Equal(t, len(insts1), 10)
 
 	out, _ := member.GetMyBooksOut()
@@ -86,6 +94,7 @@ func Test1(t *testing.T) {
 	borrowedInst, err := member.BorrowBookInstance(insts1[0].Id)
 	assert.Equal(t, err, nil)
 
+	// Make sure there is now one book out
 	out, _ = member.GetMyBooksOut()
 	assert.Equal(t, len(out), 1)
 	assert.Equal(t, string(borrowedInst.Status), common.OUT)
@@ -97,7 +106,7 @@ func Test1(t *testing.T) {
 	assert2.True(t, err != nil)
 
 	// Make sure that there are now only 9 books available of book1
-	insts2 := member.ListBooksInstances(book1.Isbn, []common.Status{common.AVAILABLE})
+	insts2, err := member.ListBooksInstances(book1.Isbn, []common.Status{common.AVAILABLE})
 	assert.Equal(t, len(insts2), 9)
 
 	instsA, err := librarian.PurchaseBook(book2.Isbn, 10, 50.25)
@@ -110,7 +119,10 @@ func Test1(t *testing.T) {
 	assert.Equal(t, string(borrowedInstA.Status), common.OUT)
 	assert.Equal(t, borrowedInstA.Borrower.Name, memberName)
 
-	instsA2 := librarian.ListBooksInstances(book2.Isbn, []common.Status{common.AVAILABLE})
+	out, _ = member.GetMyBooksOut()
+	assert.Equal(t, len(out), 2)
+
+	instsA2, err := librarian.ListBooksInstances(book2.Isbn, []common.Status{common.AVAILABLE})
 	assert.Equal(t, len(instsA2), 9)
 
 	instsB, err := librarian.PurchaseBook(book3.Isbn, 10, 20.00)
@@ -132,11 +144,10 @@ func Test1(t *testing.T) {
 			log.Fatalf(err.Error())
 		}
 
-		log.Println("EVENT", inst)
 		fee, err := librarian.InspectReturnedBook(inst.Id, common.WORN, .25, true)
 		assert.Equal(t, fee.Fee, float64(.25))
 
-		// After
+		// As a result of the due date and the worn there should be two fees
 		memberFees, err := member.GetMyUnpaidFees()
 		assert.Equal(t, len(memberFees), 2)
 

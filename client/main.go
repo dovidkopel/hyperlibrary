@@ -10,7 +10,7 @@ import (
 )
 
 func borrowAndReturn(l app.LibraryClient) {
-	bookInstances := l.ListBooksInstances("foobar5565554", []common.Status{})
+	bookInstances, err := l.ListBooksInstances("foobar5565554", []common.Status{})
 
 	var toTakeOut common.BookInstance = common.BookInstance{}
 	for i := range bookInstances {
@@ -22,7 +22,7 @@ func borrowAndReturn(l app.LibraryClient) {
 		}
 	}
 
-	_, err := l.BorrowBookInstance(toTakeOut.Id)
+	_, err = l.BorrowBookInstance(toTakeOut.Id)
 	if err != nil {
 		log.Fatalf(err.Error())
 	}

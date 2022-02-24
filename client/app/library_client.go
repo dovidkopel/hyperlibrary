@@ -200,7 +200,7 @@ func (l *LibraryClient) ListBooks() []common.Book {
 	return books
 }
 
-func (l *LibraryClient) ListBooksInstances(isbn string, statuses []common.Status) []common.BookInstance {
+func (l *LibraryClient) ListBooksInstances(isbn string, statuses []common.Status) ([]common.BookInstance, error) {
 	sts := make([]string, 0)
 	for _, s := range statuses {
 		sts = append(sts, fmt.Sprintf(`"%s"`, string(s)))
@@ -216,17 +216,17 @@ func (l *LibraryClient) ListBooksInstances(isbn string, statuses []common.Status
 	resp, err := l.contract.EvaluateTransaction("ListBookInstances", isbn, fmt.Sprintf("[%s]", ss))
 
 	if err != nil {
-		log.Fatalf(err.Error())
+		return nil, err
 	}
 
 	var books []common.BookInstance
 	err = json.Unmarshal(resp, &books)
 
 	if err != nil {
-		log.Fatalf(err.Error())
+		return nil, err
 	}
 
-	return books
+	return books, err
 }
 
 func (l *LibraryClient) CreateBook(book *common.Book) error {
@@ -234,7 +234,7 @@ func (l *LibraryClient) CreateBook(book *common.Book) error {
 	_, err = l.contract.SubmitTransaction("Invoke", "create", string(payload))
 
 	if err != nil {
-		log.Fatalf(err.Error())
+		log.Println(err.Error())
 		return err
 	}
 	return nil
@@ -247,7 +247,7 @@ func (l *LibraryClient) PurchaseBook(isbn string, quantity int, cost float32) ([
 	)
 
 	if err != nil {
-		log.Fatalf(err.Error())
+		log.Println(err.Error())
 		return nil, err
 	}
 
@@ -261,6 +261,7 @@ func (l *LibraryClient) GetBookInstance(instId string) (*common.BookInstance, er
 	bookInstanceBytes, err := l.contract.SubmitTransaction("GetBookInstance", instId)
 
 	if err != nil {
+		log.Println(err.Error())
 		return nil, err
 	}
 
@@ -268,6 +269,7 @@ func (l *LibraryClient) GetBookInstance(instId string) (*common.BookInstance, er
 	err = json.Unmarshal(bookInstanceBytes, &bookInstance)
 
 	if err != nil {
+		log.Println(err.Error())
 		return nil, err
 	}
 
@@ -278,6 +280,7 @@ func (l *LibraryClient) GetMyBooksOut() ([]*common.BookInstance, error) {
 	bookInstanceBytes, err := l.contract.EvaluateTransaction("GetMyBooksOut")
 
 	if err != nil {
+		log.Println(err.Error())
 		return nil, err
 	}
 
@@ -291,6 +294,7 @@ func (l *LibraryClient) BorrowBookInstance(instId string) (*common.BookInstance,
 	bookInstanceBytes, err := l.contract.SubmitTransaction("BorrowBookInstance", instId)
 
 	if err != nil {
+		log.Println(err.Error())
 		return nil, err
 	}
 
@@ -304,6 +308,7 @@ func (l *LibraryClient) ReturnBookInstance(instId string) (*common.Fee, error) {
 	lateFeeBytes, err := l.contract.SubmitTransaction("ReturnBookInstance", instId)
 
 	if err != nil {
+		log.Println(err.Error())
 		return nil, err
 	}
 
@@ -321,7 +326,7 @@ func (l *LibraryClient) ListUsersOwingFees() ([]*common.UserWithFees, error) {
 	usersBytes, err := l.contract.EvaluateTransaction("ListUsersOwingFees")
 
 	if err != nil {
-		log.Fatalf(err.Error())
+		log.Println(err.Error())
 		return nil, err
 	}
 
@@ -345,6 +350,7 @@ func (l *LibraryClient) PayFee(amount float64, feeIds []string) (*common.Payment
 	paymentBytes, err := l.contract.SubmitTransaction("Invoke", "pay", fmt.Sprintf("%f", amount), string(ids))
 
 	if err != nil {
+		log.Println(err.Error())
 		return nil, err
 	}
 
