@@ -47,6 +47,8 @@ func Test1(t *testing.T) {
 	member := app.New(memberName, []string{"MEMBER"}, false)
 	librarian := app.New(librarianName, []string{"LIBRARIAN"}, false)
 
+	// Force a late fee
+	librarian.SetBorrowDuration(-14)
 	librarian.HandleEvents()
 
 	book1 := common.Book{"book", RandomString(18), RandomString(10), RandomString(10), common.FICTION, 0, 0, 0}
@@ -125,6 +127,14 @@ func Test1(t *testing.T) {
 	instsA2, err := librarian.ListBooksInstances(book2.Isbn, []common.Status{common.AVAILABLE})
 	assert.Equal(t, len(instsA2), 9)
 
+	myFees, err := member.GetMyUnpaidFees()
+	assert.Equal(t, len(myFees), 0)
+
+	member.LostMyBook(instsA[0].Id)
+
+	myFees, err = member.GetMyUnpaidFees()
+	assert.Equal(t, len(myFees), 1)
+
 	instsB, err := librarian.PurchaseBook(book3.Isbn, 10, 20.00)
 	assert.Equal(t, err, nil)
 	assert.Equal(t, len(instsB), 10)
@@ -133,37 +143,45 @@ func Test1(t *testing.T) {
 	_, err = member.BorrowBookInstance(instsB[0].Id)
 	assert2.True(t, err != nil)
 
-	myFees, err := member.GetMyUnpaidFees()
-	assert.Equal(t, len(myFees), 0)
-
+	done := false
 	librarian.RegisterEventHandler("BookInstance.Returned", func(pb []byte) {
 		var inst *common.BookInstance
 		err := json.Unmarshal(pb, &inst)
 
 		if err != nil {
-			log.Fatalf(err.Error())
+			log.Println(err.Error())
 		}
 
 		fee, err := librarian.InspectReturnedBook(inst.Id, common.WORN, .25, true)
 		assert.Equal(t, fee.Fee, float64(.25))
-
-		// As a result of the due date and the worn there should be two fees
-		memberFees, err := member.GetMyUnpaidFees()
-		assert.Equal(t, len(memberFees), 2)
-
-		amt := float64(0)
-		var ids []string
-		for _, fee := range memberFees {
-			amt += fee.Fee
-			ids = append(ids, fee.Id)
-		}
-		payment, err := member.PayFee(amt, ids)
-		assert.Equal(t, payment.Amount, amt)
-
-		memberFees, err = member.GetMyUnpaidFees()
-		assert.Equal(t, len(memberFees), 0)
+		done = true
 	})
 
 	fee, err := member.ReturnBookInstance(borrowedInst.Id)
 	assert.Equal(t, fee.Fee, float64(5.5))
+
+	for {
+		if done {
+			break
+		} else {
+			time.Sleep(1)
+		}
+	}
+
+	// As a result of the due date and the worn there should be two fees
+	memberFees, err := member.GetMyUnpaidFees()
+	assert.Equal(t, len(memberFees), 3)
+
+	amt := float64(0)
+	var ids []string
+	for _, fee := range memberFees {
+		amt += fee.Fee
+		ids = append(ids, fee.Id)
+	}
+	payment, err := member.PayFee(amt, ids)
+	assert.Equal(t, payment.Amount, amt)
+
+	memberFees, err = member.GetMyUnpaidFees()
+	assert.Equal(t, len(memberFees), 0)
+
 }

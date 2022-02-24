@@ -22,7 +22,7 @@ func NewSmartContract(contract contractapi.Contract) *SmartContract {
 	s := &SmartContract{Contract: contract}
 	s.LateFeePerDay = .50
 	s.MaxBooksOut = 2
-	bd, _ := time.ParseDuration(fmt.Sprintf("-%dh", 14*24))
+	bd, _ := time.ParseDuration(fmt.Sprintf("%dh", 14*24))
 	s.BorrowDuration = bd
 	return s
 }
@@ -33,6 +33,34 @@ func (t *SmartContract) Init(ctx contractapi.TransactionContextInterface) error 
 	t.CreateBook(ctx, &common.Book{"book", "abcd1234", "Charles Dickens", "A Tale of Two Cities", common.FICTION, 0, 0, 0})
 	t.CreateBook(ctx, &common.Book{"book", "abcd45454", "William Shakespeare", "Romeo and Juliet", common.FICTION, 0, 0, 0})
 	t.CreateBook(ctx, &common.Book{"book", "abcd45455", "William Shakespeare", "Julis Casar", common.FICTION, 0, 0, 0})
+	return nil
+}
+
+func (t *SmartContract) SetBorrowDuration(ctx contractapi.TransactionContextInterface, days int) error {
+	if !t.HasRole(ctx, "LIBRARIAN") {
+		return errors.New("Access Denied!")
+	}
+
+	log.Println(fmt.Sprintf("Setting borrow duration to %d days", days))
+	bd, _ := time.ParseDuration(fmt.Sprintf("%dh", days*24))
+	t.BorrowDuration = bd
+	return nil
+}
+
+func (t *SmartContract) SetMaxBooksOut(ctx contractapi.TransactionContextInterface, days int) error {
+	if !t.HasRole(ctx, "LIBRARIAN") {
+		return errors.New("Access Denied!")
+	}
+
+	t.MaxBooksOut = uint8(days)
+	return nil
+}
+
+func (t *SmartContract) SetLateFeePerDay(ctx contractapi.TransactionContextInterface, fee float64) error {
+	if !t.HasRole(ctx, "LIBRARIAN") {
+		return errors.New("Access Denied!")
+	}
+	t.LateFeePerDay = fee
 	return nil
 }
 
@@ -422,7 +450,7 @@ func (t *SmartContract) InspectReturnedBook(ctx contractapi.TransactionContextIn
 		ts, _ := ctx.GetStub().GetTxTimestamp()
 		date := common.GetApproxTime(ts)
 
-		fee = common.Fee{"fee", ctx.GetStub().GetTxID(), t.GetUserByClientId(ctx),
+		fee = common.Fee{"fee", ctx.GetStub().GetTxID(), inst.Borrower,
 			feeAmount, common.DAMAGE_FEE, date, 0, false}
 
 		t.storeFee(ctx, &fee)
@@ -430,6 +458,7 @@ func (t *SmartContract) InspectReturnedBook(ctx contractapi.TransactionContextIn
 	}
 
 	inst.Condition = cond
+	inst.Borrower = common.MakeEmptyUser()
 
 	if available {
 		inst.Status = common.AVAILABLE
@@ -461,8 +490,16 @@ func (t *SmartContract) InspectReturnedBook(ctx contractapi.TransactionContextIn
 	return nil, nil
 }
 
-func (t *SmartContract) LostBook(ctx contractapi.TransactionContextInterface, instId string) (*common.Fee, error) {
+func (t *SmartContract) LostMyBook(ctx contractapi.TransactionContextInterface, instId string) (*common.Fee, error) {
 	inst, err := t.GetBookInstance(ctx, instId)
+
+	if inst.Borrower.ClientId != t.GetUserByClientId(ctx).ClientId {
+		return nil, errors.New("You don't currently have this book taken out!")
+	}
+
+	if inst.Status != common.OUT {
+		return nil, errors.New("This book is not currently out!")
+	}
 
 	if err != nil {
 		return nil, err
@@ -507,7 +544,6 @@ func (t *SmartContract) ReturnBookInstance(ctx contractapi.TransactionContextInt
 
 		inst.Status = common.RETURNED
 		inst.DueDate = time.Time{}
-		inst.Borrower = common.MakeEmptyUser()
 
 		instBytes, err := json.Marshal(inst)
 

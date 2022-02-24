@@ -29,7 +29,7 @@ func (t *SmartContract) GetFees(ctx contractapi.TransactionContextInterface, cli
 }
 
 func (t *SmartContract) GetUnpaidFees(ctx contractapi.TransactionContextInterface, clientId string) ([]*common.Fee, error) {
-	query := fmt.Sprintf(`{"selector":{"docType":"fee", "fullyPaid": false, "borrower: {"clientId": "%s"}}}`, clientId)
+	query := fmt.Sprintf(`{"selector":{"docType":"fee", "fullyPaid": false, "borrower": {"clientId": "%s"}}}`, clientId)
 	res, err := GetQueryResultForQueryString(ctx, query)
 
 	if err != nil {

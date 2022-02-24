@@ -9,7 +9,6 @@ import (
 	"github.com/hyperledger/fabric-sdk-go/pkg/gateway"
 	"hyperlibrary/common"
 	"log"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -76,17 +75,6 @@ func New(userId string, roles []string, handleEvents bool) LibraryClient {
 
 	if handleEvents {
 		ll.HandleEvents()
-		ll.RegisterEventHandler("BookInstance.Returned", func(pb []byte) {
-			var inst *common.BookInstance
-			err = json.Unmarshal(pb, &inst)
-
-			if err != nil {
-				log.Fatalf(err.Error())
-			}
-
-			log.Println("EVENT", inst)
-			ll.bookReturned(inst)
-		})
 	}
 
 	return ll
@@ -147,44 +135,12 @@ func (l *LibraryClient) eventHandler(c <-chan *fab.CCEvent) {
 	go l.eventHandler(c)
 }
 
-func (l *LibraryClient) bookReturned(inst *common.BookInstance) {
+func (l *LibraryClient) SetBorrowDuration(days int) {
+	l.contract.EvaluateTransaction("SetBorrowDuration", strconv.Itoa(days))
+}
 
-	r := rand.Intn(100)
-
-	var cond common.Condition
-	var fee float64 = 0
-	available := true
-	// Good
-
-	if r > 50 {
-		cond = common.GOOD
-	} else if r > 40 {
-		cond = common.WORN
-	} else if r > 30 {
-		cond = common.RIPPED
-		fee = .50
-	} else if r > 20 {
-		cond = common.PAGES_MISSING
-		fee = 1.0
-	} else {
-		cond = common.REQUIRES_REPLACEMENT
-		fee = float64(inst.Cost)
-		available = false
-	}
-
-	log.Println(fmt.Sprintf("Inspecting book with %s, %f", cond, fee))
-	_, err := l.InspectReturnedBook(inst.Id, cond, fee, available)
-
-	if err != nil {
-		log.Fatalf(err.Error())
-	}
-
-	if fee > 0 {
-		log.Println(fee)
-	}
-
-	inst, _ = l.GetBookInstance(inst.Id)
-	log.Println("inst", inst)
+func (l *LibraryClient) SetLateFeePerDay(fee float64) {
+	l.contract.EvaluateTransaction("SetLateFeePerDay", fmt.Sprintf("%f", fee))
 }
 
 func (l *LibraryClient) ListBooks() []common.Book {
@@ -396,6 +352,23 @@ func (l *LibraryClient) GetMyFees() ([]*common.Fee, error) {
 	}
 
 	return fees, nil
+}
+
+func (l *LibraryClient) LostMyBook(instId string) (*common.Fee, error) {
+	feesBytes, err := l.contract.SubmitTransaction("LostMyBook", instId)
+
+	if err != nil {
+		return nil, err
+	}
+
+	var fee *common.Fee
+	err = json.Unmarshal(feesBytes, &fee)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return fee, nil
 }
 
 func (l *LibraryClient) GetMyUnpaidFees() ([]*common.Fee, error) {

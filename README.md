@@ -9,7 +9,6 @@ The location of the Fabric Samples repo should be updated in the `__init__.py` f
 
 To push updates of the chaincode you can use the `install.py` command.
 
-Use the `run.sh` command to run the client application. If you wish it is setup to emulate multiple clients concurrently.
-You can pass in the argument which client to run.
+There are some tests.
 
 Books are identified by its unique ISBN. In order to populate physical books into the library you need to `purchase` them.
