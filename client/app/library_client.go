@@ -188,7 +188,6 @@ func (l *LibraryClient) bookReturned(inst *common.BookInstance) {
 }
 
 func (l *LibraryClient) ListBooks() []common.Book {
-	print("Listing books")
 	resp, err := l.contract.EvaluateTransaction("ListBooks")
 
 	var books []common.Book
@@ -202,8 +201,6 @@ func (l *LibraryClient) ListBooks() []common.Book {
 }
 
 func (l *LibraryClient) ListBooksInstances(isbn string, statuses []common.Status) []common.BookInstance {
-	print("Listing book instances")
-
 	sts := make([]string, 0)
 	for _, s := range statuses {
 		sts = append(sts, fmt.Sprintf(`"%s"`, string(s)))
@@ -277,6 +274,19 @@ func (l *LibraryClient) GetBookInstance(instId string) (*common.BookInstance, er
 	return bookInstance, err
 }
 
+func (l *LibraryClient) GetMyBooksOut() ([]*common.BookInstance, error) {
+	bookInstanceBytes, err := l.contract.EvaluateTransaction("GetMyBooksOut")
+
+	if err != nil {
+		return nil, err
+	}
+
+	var bookInstances []*common.BookInstance
+	err = json.Unmarshal(bookInstanceBytes, &bookInstances)
+
+	return bookInstances, nil
+}
+
 func (l *LibraryClient) BorrowBookInstance(instId string) (*common.BookInstance, error) {
 	bookInstanceBytes, err := l.contract.SubmitTransaction("BorrowBookInstance", instId)
 
@@ -325,7 +335,7 @@ func (l *LibraryClient) ListUsersOwingFees() ([]*common.UserWithFees, error) {
 	return users, nil
 }
 
-func (l *LibraryClient) PayLateFee(amount float64, feeIds []string) (*common.Payment, error) {
+func (l *LibraryClient) PayFee(amount float64, feeIds []string) (*common.Payment, error) {
 	ids, err := json.Marshal(feeIds)
 
 	if err != nil {
@@ -367,6 +377,23 @@ func (l *LibraryClient) GetFeeHistory(id string) ([]*common.History, error) {
 
 func (l *LibraryClient) GetMyFees() ([]*common.Fee, error) {
 	feesBytes, err := l.contract.EvaluateTransaction("GetMyFees")
+
+	if err != nil {
+		return nil, err
+	}
+
+	var fees []*common.Fee
+	err = json.Unmarshal(feesBytes, &fees)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return fees, nil
+}
+
+func (l *LibraryClient) GetMyUnpaidFees() ([]*common.Fee, error) {
+	feesBytes, err := l.contract.EvaluateTransaction("GetMyUnpaidFees")
 
 	if err != nil {
 		return nil, err

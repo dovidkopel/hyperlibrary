@@ -11,7 +11,25 @@ import (
 )
 
 func (t *SmartContract) GetFees(ctx contractapi.TransactionContextInterface, clientId string) ([]*common.Fee, error) {
-	query := fmt.Sprintf(`{"selector":{"docType":"fee", "borrower: {"clientId": "%s"}}}`, clientId)
+	query := fmt.Sprintf(`{"selector":{"docType":"fee", "borrower": {"clientId": "%s"}}}`, clientId)
+	res, err := GetQueryResultForQueryString(ctx, query)
+
+	if err != nil {
+		return nil, err
+	}
+
+	var fees []*common.Fee
+	for i := range res {
+		feeBytes := res[i]
+		var fee common.Fee
+		err = json.Unmarshal(feeBytes, &fee)
+		fees = append(fees, &fee)
+	}
+	return fees, nil
+}
+
+func (t *SmartContract) GetUnpaidFees(ctx contractapi.TransactionContextInterface, clientId string) ([]*common.Fee, error) {
+	query := fmt.Sprintf(`{"selector":{"docType":"fee", "fullyPaid": false, "borrower: {"clientId": "%s"}}}`, clientId)
 	res, err := GetQueryResultForQueryString(ctx, query)
 
 	if err != nil {
@@ -31,6 +49,11 @@ func (t *SmartContract) GetFees(ctx contractapi.TransactionContextInterface, cli
 func (t *SmartContract) GetMyFees(ctx contractapi.TransactionContextInterface) ([]*common.Fee, error) {
 	id, _ := ctx.GetClientIdentity().GetID()
 	return t.GetFees(ctx, id)
+}
+
+func (t *SmartContract) GetMyUnpaidFees(ctx contractapi.TransactionContextInterface) ([]*common.Fee, error) {
+	id, _ := ctx.GetClientIdentity().GetID()
+	return t.GetUnpaidFees(ctx, id)
 }
 
 func (t *SmartContract) checkForLateFee(ctx contractapi.TransactionContextInterface, inst *common.BookInstance) (*common.Fee, error) {

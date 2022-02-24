@@ -38,7 +38,7 @@ func borrowAndReturn(l app.LibraryClient) {
 
 	//time.Sleep(10 * time.Second)
 
-	log.Println(l.PayLateFee(lateFee.Fee, []string{lateFee.Id}))
+	log.Println(l.PayFee(lateFee.Fee, []string{lateFee.Id}))
 }
 
 func main() {

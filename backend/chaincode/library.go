@@ -313,7 +313,8 @@ func (t *SmartContract) updateBookInstance(ctx contractapi.TransactionContextInt
 
 func (t *SmartContract) GetMyBooksOut(ctx contractapi.TransactionContextInterface) ([]*common.BookInstance, error) {
 	user := t.GetUserByClientId(ctx)
-	queryString := fmt.Sprintf(`{"selector":{"docType":"bookInstance","Borrower.ClientId":"%s"}}`, user.ClientId)
+	queryString := fmt.Sprintf(`{"selector":{"docType":"bookInstance", "borrower.clientId": "%s"}}`, user.ClientId)
+	log.Println("Querying", queryString)
 	res, err := GetQueryResultForQueryString(ctx, queryString)
 
 	if err != nil {
@@ -342,8 +343,10 @@ func (t *SmartContract) MaxBooksOutCheck(ctx contractapi.TransactionContextInter
 	if err != nil {
 		return err
 	}
+	count := uint8(len(books))
+	log.Println("Comparing", count, t.MaxBooksOut)
 
-	if uint8(len(books)) >= t.MaxBooksOut {
+	if count >= t.MaxBooksOut {
 		return errors.New("You have the maximum number of books out!")
 	}
 
@@ -351,6 +354,13 @@ func (t *SmartContract) MaxBooksOutCheck(ctx contractapi.TransactionContextInter
 }
 
 func (t *SmartContract) BorrowBookInstance(ctx contractapi.TransactionContextInterface, instId string) (*common.BookInstance, error) {
+	err := t.MaxBooksOutCheck(ctx)
+
+	if err != nil {
+		log.Println("Max books out!")
+		return nil, err
+	}
+
 	inst, err := t.GetBookInstance(ctx, instId)
 
 	if err != nil {
@@ -359,6 +369,7 @@ func (t *SmartContract) BorrowBookInstance(ctx contractapi.TransactionContextInt
 
 	book, err := t.GetBook(ctx, inst.BookId)
 
+	log.Println("Checking instance status", inst)
 	if inst.Status == common.AVAILABLE {
 		log.Println(fmt.Sprintf("Going to borrow book \"%s\"", instId))
 		inst.Borrower = t.GetUserByClientId(ctx)
