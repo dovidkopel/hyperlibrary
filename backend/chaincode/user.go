@@ -47,7 +47,7 @@ func (t *SmartContract) ListUsersOwingFees(ctx contractapi.TransactionContextInt
 			return users, err
 		}
 
-		log.Println("Late Fee", fee)
+		log.Println("Fee", fee)
 
 		found := false
 		for i := range users {

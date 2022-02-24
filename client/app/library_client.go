@@ -13,12 +13,14 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 type LibraryClient struct {
 	network  *gateway.Network
 	gateway  *gateway.Gateway
 	contract *gateway.Contract
+	handlers map[string]func([]byte)
 }
 
 var fabric_samples = "/home/dkopel/go/src/github.com/dovidkopel/fabric-samples"
@@ -70,9 +72,21 @@ func New(userId string, roles []string, handleEvents bool) LibraryClient {
 	ll.network = network
 	ll.gateway = gw
 	ll.contract = network.GetContract("hyperlibrary")
+	ll.handlers = make(map[string]func([]byte), 0)
 
 	if handleEvents {
 		ll.HandleEvents()
+		ll.RegisterEventHandler("BookInstance.Returned", func(pb []byte) {
+			var inst *common.BookInstance
+			err = json.Unmarshal(pb, &inst)
+
+			if err != nil {
+				log.Fatalf(err.Error())
+			}
+
+			log.Println("EVENT", inst)
+			ll.bookReturned(inst)
+		})
 	}
 
 	return ll
@@ -99,14 +113,15 @@ func blockEventHandler(c <-chan *fab.FilteredBlockEvent) {
 func (l *LibraryClient) HandleEvents() {
 	_, ch, _ := l.contract.RegisterEvent("Events")
 	go l.eventHandler(ch)
-	//_, ch, _ := l.network.RegisterFilteredBlockEvent()
-	//go blockEventHandler(ch)
+}
+
+func (l *LibraryClient) RegisterEventHandler(event string, cb func([]byte)) {
+	l.handlers[event] = cb
 }
 
 func (l *LibraryClient) eventHandler(c <-chan *fab.CCEvent) {
 	v := <-c
 
-	//event := v.EventName
 	payloadBytes := v.Payload
 
 	var payloads []common.Event
@@ -123,33 +138,16 @@ func (l *LibraryClient) eventHandler(c <-chan *fab.CCEvent) {
 			log.Fatalf(err.Error())
 		}
 
-		if event.Name == "BookInstance.Created" {
-			var inst common.BookInstance
-			err = json.Unmarshal(pb, &inst)
-
-			if err != nil {
-				log.Fatalf(err.Error())
+		for name, handler := range l.handlers {
+			if event.Name == name {
+				handler(pb)
 			}
-
-			log.Println("EVENT", event.Name, inst)
-		} else if event.Name == "BookInstance.Returned" {
-			var inst common.BookInstance
-			err = json.Unmarshal(pb, &inst)
-
-			if err != nil {
-				log.Fatalf(err.Error())
-			}
-
-			log.Println("EVENT", event.Name, inst)
-			l.bookReturned(inst)
-		} else {
-			log.Println("EVENT", event.Name, event.Payload)
 		}
 	}
 	go l.eventHandler(c)
 }
 
-func (l *LibraryClient) bookReturned(inst common.BookInstance) {
+func (l *LibraryClient) bookReturned(inst *common.BookInstance) {
 
 	r := rand.Intn(100)
 
@@ -175,7 +173,7 @@ func (l *LibraryClient) bookReturned(inst common.BookInstance) {
 	}
 
 	log.Println(fmt.Sprintf("Inspecting book with %s, %f", cond, fee))
-	_, err := l.contract.SubmitTransaction("Invoke", "inspect", inst.Id, string(cond), fmt.Sprintf("%f", fee), strconv.FormatBool(available))
+	_, err := l.InspectReturnedBook(inst.Id, cond, fee, available)
 
 	if err != nil {
 		log.Fatalf(err.Error())
@@ -203,9 +201,22 @@ func (l *LibraryClient) ListBooks() []common.Book {
 	return books
 }
 
-func (l *LibraryClient) ListBooksInstances(isbn string) []common.BookInstance {
+func (l *LibraryClient) ListBooksInstances(isbn string, statuses []common.Status) []common.BookInstance {
 	print("Listing book instances")
-	resp, err := l.contract.EvaluateTransaction("ListBookInstances", isbn, "[]")
+
+	sts := make([]string, 0)
+	for _, s := range statuses {
+		sts = append(sts, fmt.Sprintf(`"%s"`, string(s)))
+	}
+
+	var ss string
+	if len(sts) > 1 {
+		ss = strings.Join(sts, ",")
+	} else {
+		ss = sts[0]
+	}
+
+	resp, err := l.contract.EvaluateTransaction("ListBookInstances", isbn, fmt.Sprintf("[%s]", ss))
 
 	if err != nil {
 		log.Fatalf(err.Error())
@@ -221,7 +232,7 @@ func (l *LibraryClient) ListBooksInstances(isbn string) []common.BookInstance {
 	return books
 }
 
-func (l *LibraryClient) CreateBook(book common.Book) error {
+func (l *LibraryClient) CreateBook(book *common.Book) error {
 	payload, err := json.Marshal(book)
 	_, err = l.contract.SubmitTransaction("Invoke", "create", string(payload))
 
@@ -232,7 +243,7 @@ func (l *LibraryClient) CreateBook(book common.Book) error {
 	return nil
 }
 
-func (l *LibraryClient) PurchaseBook(isbn string, quantity int, cost float32) ([]common.BookInstance, error) {
+func (l *LibraryClient) PurchaseBook(isbn string, quantity int, cost float32) ([]*common.BookInstance, error) {
 	instBytes, err := l.contract.SubmitTransaction("Invoke", "purchase", isbn,
 		fmt.Sprintf("%d", quantity),
 		fmt.Sprintf("%f", cost),
@@ -243,91 +254,95 @@ func (l *LibraryClient) PurchaseBook(isbn string, quantity int, cost float32) ([
 		return nil, err
 	}
 
-	var insts []common.BookInstance
+	var insts []*common.BookInstance
 	json.Unmarshal(instBytes, &insts)
 
 	return insts, nil
 }
 
-func (l *LibraryClient) GetBookInstance(instId string) (common.BookInstance, error) {
+func (l *LibraryClient) GetBookInstance(instId string) (*common.BookInstance, error) {
 	bookInstanceBytes, err := l.contract.SubmitTransaction("GetBookInstance", instId)
 
 	if err != nil {
-		return common.BookInstance{}, err
+		return nil, err
 	}
 
-	var bookInstance common.BookInstance
+	var bookInstance *common.BookInstance
 	err = json.Unmarshal(bookInstanceBytes, &bookInstance)
 
 	if err != nil {
-		return common.BookInstance{}, err
+		return nil, err
 	}
 
 	return bookInstance, err
 }
 
-func (l *LibraryClient) BorrowBook(bookId string) error {
-	_, err := l.contract.SubmitTransaction("BorrowBookInstance", bookId)
+func (l *LibraryClient) BorrowBookInstance(instId string) (*common.BookInstance, error) {
+	bookInstanceBytes, err := l.contract.SubmitTransaction("BorrowBookInstance", instId)
 
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+
+	var bookInstance *common.BookInstance
+	err = json.Unmarshal(bookInstanceBytes, &bookInstance)
+
+	return bookInstance, nil
 }
 
-func (l *LibraryClient) ReturnBook(instId string) (common.Fee, error) {
+func (l *LibraryClient) ReturnBookInstance(instId string) (*common.Fee, error) {
 	lateFeeBytes, err := l.contract.SubmitTransaction("ReturnBookInstance", instId)
 
 	if err != nil {
-		return common.Fee{}, err
+		return nil, err
 	}
 
-	var lateFee common.Fee
+	var lateFee *common.Fee
 	err = json.Unmarshal(lateFeeBytes, &lateFee)
 
 	if err != nil {
-		return common.Fee{}, err
+		return nil, err
 	}
 
 	return lateFee, nil
 }
 
-func (l *LibraryClient) ListUsersOwingFees() ([]common.UserWithFees, error) {
+func (l *LibraryClient) ListUsersOwingFees() ([]*common.UserWithFees, error) {
 	usersBytes, err := l.contract.EvaluateTransaction("ListUsersOwingFees")
 
 	if err != nil {
 		log.Fatalf(err.Error())
-		return []common.UserWithFees{}, err
+		return nil, err
 	}
 
-	var users []common.UserWithFees
+	var users []*common.UserWithFees
 	err = json.Unmarshal(usersBytes, &users)
 
 	if err != nil {
-		return []common.UserWithFees{}, err
+		return nil, err
 	}
 
 	return users, nil
 }
 
-func (l *LibraryClient) PayLateFee(amount float64, feeIds []string) (common.Payment, error) {
+func (l *LibraryClient) PayLateFee(amount float64, feeIds []string) (*common.Payment, error) {
 	ids, err := json.Marshal(feeIds)
 
 	if err != nil {
-		return common.Payment{}, err
+		return nil, err
 	}
 
 	paymentBytes, err := l.contract.SubmitTransaction("Invoke", "pay", fmt.Sprintf("%f", amount), string(ids))
 
 	if err != nil {
-		return common.Payment{}, err
+		return nil, err
 	}
 
-	var payment common.Payment
+	var payment *common.Payment
 	err = json.Unmarshal(paymentBytes, &payment)
 
 	if err != nil {
-		return common.Payment{}, err
+		return nil, err
 	}
 
 	return payment, nil
@@ -350,8 +365,25 @@ func (l *LibraryClient) GetFeeHistory(id string) ([]*common.History, error) {
 	return history, nil
 }
 
+func (l *LibraryClient) GetMyFees() ([]*common.Fee, error) {
+	feesBytes, err := l.contract.EvaluateTransaction("GetMyFees")
+
+	if err != nil {
+		return nil, err
+	}
+
+	var fees []*common.Fee
+	err = json.Unmarshal(feesBytes, &fees)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return fees, nil
+}
+
 func (l *LibraryClient) InspectReturnedBook(instId string, cond common.Condition, feeAmount float64, available bool) (*common.Fee, error) {
-	feeBytes, err := l.contract.SubmitTransaction("InspectReturnedBook", instId, string(cond), fmt.Sprintf("%f", feeAmount), fmt.Sprintf("%d", available))
+	feeBytes, err := l.contract.SubmitTransaction("Invoke", "inspect", instId, string(cond), fmt.Sprintf("%f", feeAmount), strconv.FormatBool(available))
 
 	if err != nil {
 		return nil, err

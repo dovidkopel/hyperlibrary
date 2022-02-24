@@ -10,7 +10,7 @@ import (
 )
 
 func borrowAndReturn(l app.LibraryClient) {
-	bookInstances := l.ListBooksInstances("foobar5565554")
+	bookInstances := l.ListBooksInstances("foobar5565554", []common.Status{})
 
 	var toTakeOut common.BookInstance = common.BookInstance{}
 	for i := range bookInstances {
@@ -22,14 +22,14 @@ func borrowAndReturn(l app.LibraryClient) {
 		}
 	}
 
-	err := l.BorrowBook(toTakeOut.Id)
+	_, err := l.BorrowBookInstance(toTakeOut.Id)
 	if err != nil {
 		log.Fatalf(err.Error())
 	}
 
 	log.Println("Borrowed..")
 
-	lateFee, err := l.ReturnBook(toTakeOut.Id)
+	lateFee, err := l.ReturnBookInstance(toTakeOut.Id)
 	if err != nil {
 		log.Fatalf(err.Error())
 	}
@@ -74,10 +74,10 @@ func main() {
 	switch cmd {
 	case "1":
 		l := app.New(user, roles, false)
-		l.CreateBook(common.Book{"book", "foobar5565554", "F. Scott Fitzgerald", "Dr Pepper", common.FICTION, 0, 0, 0})
+		l.CreateBook(&common.Book{"book", "foobar5565554", "F. Scott Fitzgerald", "Dr Pepper", common.FICTION, 0, 0, 0})
 		l.PurchaseBook("foobar5565554", 5, 10.50)
 
-		l.CreateBook(common.Book{"book", "abdbd55687", "F. Scott Fitzgerald", "Root Beer", common.FICTION, 0, 0, 0})
+		l.CreateBook(&common.Book{"book", "abdbd55687", "F. Scott Fitzgerald", "Root Beer", common.FICTION, 0, 0, 0})
 		l.PurchaseBook("abdbd55687", 10, 50.0)
 		break
 	case "1.5":

@@ -350,11 +350,11 @@ func (t *SmartContract) MaxBooksOutCheck(ctx contractapi.TransactionContextInter
 	return nil
 }
 
-func (t *SmartContract) BorrowBookInstance(ctx contractapi.TransactionContextInterface, instId string) error {
+func (t *SmartContract) BorrowBookInstance(ctx contractapi.TransactionContextInterface, instId string) (*common.BookInstance, error) {
 	inst, err := t.GetBookInstance(ctx, instId)
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	book, err := t.GetBook(ctx, inst.BookId)
@@ -368,32 +368,30 @@ func (t *SmartContract) BorrowBookInstance(ctx contractapi.TransactionContextInt
 		instBytes1, err := json.Marshal(&inst)
 
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		err = ctx.GetStub().PutState(fmt.Sprintf("bookInstance.%s", instId), instBytes1)
 
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		book.Available -= 1
 		err = t.updateBook(ctx, book)
 
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		//ctx.GetStub().SetEvent("BookInstance.Borrowed", instBytes1)
 		t.AddEvent(ctx, "BookInstance.Borrowed", inst)
-
-		return nil
 	} else if inst.Status == common.OUT {
-		return errors.New("This book is already out!")
+		return nil, errors.New("This book is already out!")
 	}
 
 	t.SetEvents(ctx)
-	return nil
+	return inst, nil
 }
 
 func (t *SmartContract) InspectReturnedBook(ctx contractapi.TransactionContextInterface, instId string, cond common.Condition,
